@@ -12,7 +12,8 @@ import {
   GraduationCap,
   Bell,
   LogOut,
-  Brain
+  Brain,
+  ClipboardCheck
 } from 'lucide-react';
 
 const Layout = ({ children, user, onLogout }) => {
@@ -22,6 +23,7 @@ const Layout = ({ children, user, onLogout }) => {
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: Home },
     { name: 'My Classes', href: '/classes', icon: BookOpen },
+    { name: 'Attendance', href: '/attendance', icon: ClipboardCheck },
     { name: 'Assignments', href: '/assignments', icon: FileText },
     { name: 'Quizzes', href: '/quiz', icon: Brain },
     { name: 'Doubt Resolution', href: '/doubts', icon: HelpCircle },

@@ -39,7 +39,7 @@ app.use(compression());
 
 // CORS configuration (must be BEFORE rate limiter to set headers on preflight)
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: process.env.FRONTEND_URL || 'http://localhost:5174',
   credentials: true,
   optionsSuccessStatus: 200
 };
@@ -176,6 +176,9 @@ app.use('/api/dashboard', protect, authorize('student'), dashboardRoutes);
 app.use('/api/videos', protect, authorize('student'), videoRoutes);
 app.use('/api/assessments', assessmentRoutes); // protect & role middleware applied in the route file
 app.use('/api/classes', protect, classesRoutes); // <-- Register classes routes with protect middleware
+app.use('/api/schedule', protect, authorize('student'), require('./routes/schedule'));
+app.use('/api/attendance', protect, authorize('student'), require('./routes/attendance'));
+app.use('/api/goals', protect, authorize('student'), require('./routes/goals'));
 // Apply more lenient rate limiter to content routes (student-only)
 app.use('/api/content', protect, authorize('student'), contentLimiter, contentRoutes);
 

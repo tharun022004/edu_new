@@ -248,6 +248,23 @@ class ApiService {
     return this.handleResponse(response);
   }
 
+  // Attendance endpoints
+  async submitAttendance(attendanceData) {
+    const response = await fetch(`${this.baseURL}/attendance`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(attendanceData),
+    });
+    return this.handleResponse(response);
+  }
+
+  async getClassAttendance(classId) {
+    const response = await fetch(`${this.baseURL}/attendance/class/${classId}`, {
+      headers: this.getAuthHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
   // Class code functionality
   async generateClassCode(classId) {
     const response = await fetch(`${this.baseURL}/classes/${classId}/generate-code`, {
@@ -448,6 +465,28 @@ class ApiService {
       body: formData,
     });
     return this.handleResponse(response);
+  }
+
+  // --- Schedule Endpoints ---
+  async getSchedule() {
+    return this.get('/schedule');
+  }
+
+  async createSchedule(scheduleData) {
+    return this.post('/schedule', scheduleData);
+  }
+
+  async deleteSchedule(id) {
+    return this.delete(`/schedule/${id}`);
+  }
+
+  // --- Attendance Endpoints ---
+  async submitAttendance(attendanceData) {
+    return this.post('/attendance', attendanceData);
+  }
+
+  async getClassAttendance(classId) {
+    return this.get(`/attendance/class/${classId}`);
   }
 }
 

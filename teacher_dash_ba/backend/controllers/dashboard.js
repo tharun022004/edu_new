@@ -223,49 +223,84 @@ exports.deleteTask = async (req, res, next) => {
 // @access  Private
 exports.getRecentActivity = async (req, res, next) => {
   try {
-    const classes = await Class.find({ teacher: req.user.id }).select('_id');
+    const classes = await Class.find({ teacher: req.user.id }).select('_id name');
     const classIds = classes.map(c => c._id);
+    const classMap = {};
+    classes.forEach(c => { classMap[c._id.toString()] = c.name; });
 
-    // Get recent assignments submissions (mock data for now)
-    const recentActivity = [
-      {
-        id: 1,
-        student: 'Sarah Johnson',
-        action: 'submitted Algebra Quiz',
-        time: '2 hours ago',
-        type: 'submission',
-        class: 'Math 8A'
-      },
-      {
-        id: 2,
-        student: 'Mike Chen',
-        action: 'asked about Quadratic Equations',
-        time: '4 hours ago',
+    // Get recent doubts
+    const recentDoubts = await Doubt.find({ class: { $in: classIds } })
+      .populate('student', 'name')
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    // Get recent assignments created
+    const recentAssignments = await Assignment.find({ teacher: req.user.id })
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    // Get recent content uploaded
+    const recentContent = await Content.find({ teacher: req.user.id })
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    const activity = [];
+
+    recentDoubts.forEach(doubt => {
+      activity.push({
+        id: `doubt_${doubt._id}`,
+        student: doubt.student ? doubt.student.name : 'A student',
+        action: `asked a doubt: "${doubt.title}"`,
+        time: doubt.createdAt,
         type: 'doubt',
-        class: 'Math 8B'
-      },
-      {
-        id: 3,
-        student: 'Emma Davis',
-        action: 'completed Chapter 5 reading',
-        time: '6 hours ago',
-        type: 'progress',
-        class: 'Math 9C'
-      },
-      {
-        id: 4,
-        student: 'John Smith',
-        action: 'submitted Geometry assignment',
-        time: '1 day ago',
-        type: 'submission',
-        class: 'Math 10A'
-      }
-    ];
+        class: classMap[doubt.class?.toString()] || 'Class'
+      });
+    });
+
+    recentAssignments.forEach(assignment => {
+      activity.push({
+        id: `assignment_${assignment._id}`,
+        student: 'You',
+        action: `created an assignment: "${assignment.title}"`,
+        time: assignment.createdAt,
+        type: 'assignment',
+        class: classMap[assignment.class?.toString()] || 'Class'
+      });
+    });
+
+    recentContent.forEach(content => {
+      activity.push({
+        id: `content_${content._id}`,
+        student: 'You',
+        action: `uploaded content: "${content.title}"`,
+        time: content.createdAt,
+        type: 'content',
+        class: classMap[content.class?.toString()] || 'Class'
+      });
+    });
+
+    // Sort by time descending and take top 10
+    activity.sort((a, b) => new Date(b.time) - new Date(a.time));
+    
+    // Format time relatively
+    const formatTime = (date) => {
+      const now = new Date();
+      const diffInSeconds = Math.floor((now - new Date(date)) / 1000);
+      if (diffInSeconds < 60) return 'Just now';
+      if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
+      if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
+      return `${Math.floor(diffInSeconds / 86400)} days ago`;
+    };
+
+    const formattedActivity = activity.slice(0, 10).map(a => ({
+      ...a,
+      time: formatTime(a.time)
+    }));
 
     res.status(200).json({
       success: true,
-      count: recentActivity.length,
-      data: recentActivity
+      count: formattedActivity.length,
+      data: formattedActivity
     });
   } catch (error) {
     res.status(500).json({
@@ -281,52 +316,10 @@ exports.getRecentActivity = async (req, res, next) => {
 // @access  Private
 exports.getSchedule = async (req, res, next) => {
   try {
-    const { date } = req.query;
-    const targetDate = date ? new Date(date) : new Date();
-    
-    // Mock schedule data - in production, this would come from a schedule model
-    const schedule = [
-      {
-        time: '08:00',
-        subject: 'Math',
-        grade: '9th A',
-        room: '201',
-        status: 'completed',
-        class: 'Mathematics - Advanced'
-      },
-      {
-        time: '09:30',
-        subject: 'Math',
-        grade: '8th B',
-        room: '203',
-        status: 'completed',
-        class: 'Mathematics - Basic'
-      },
-      {
-        time: '10:30',
-        subject: 'Math',
-        grade: '8th A',
-        room: '204',
-        status: 'current',
-        class: 'Mathematics - Intermediate'
-      },
-      {
-        time: '12:00',
-        subject: 'Math',
-        grade: '10th A',
-        room: '205',
-        status: 'upcoming',
-        class: 'Mathematics - Advanced'
-      },
-      {
-        time: '14:00',
-        subject: 'Math',
-        grade: '9th C',
-        room: '202',
-        status: 'upcoming',
-        class: 'Mathematics - Basic'
-      }
-    ];
+    const Schedule = require('../models/Schedule');
+    const schedule = await Schedule.find({ teacher: req.user.id })
+      .populate('class', 'name subject grade')
+      .sort('startTime');
 
     res.status(200).json({
       success: true,

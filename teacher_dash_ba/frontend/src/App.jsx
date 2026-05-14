@@ -12,6 +12,7 @@ import Doubts from './pages/Doubts';
 import Settings from './pages/Settings';
 import TeacherQuiz from './pages/Quiz';
 import TeacherNotes from './pages/TeacherNotes';
+import Attendance from './pages/Attendance';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -101,6 +102,7 @@ function App() {
           <Route path="/notes" element={<TeacherNotes />} />
           <Route path="/content" element={<ClassContent />} />
           <Route path="/doubts" element={<Doubts />} />
+          <Route path="/attendance" element={<Attendance />} />
           <Route path="/quiz" element={<TeacherQuiz />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

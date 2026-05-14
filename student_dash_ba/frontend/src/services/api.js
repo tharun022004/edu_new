@@ -568,7 +568,53 @@ class ApiService {
     }
     return response.json();
   }
-}
+  // --- Dashboard Schedule, Attendance, & Goals ---
+  async getSchedule() {
+    const response = await fetch(`${this.baseURL}/schedule`, {
+      headers: this.getAuthHeaders(),
+    });
+    return this.handleResponse(response);
+  }
 
+  async getAttendance() {
+    const response = await fetch(`${this.baseURL}/attendance`, {
+      headers: this.getAuthHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  async getGoals() {
+    const response = await fetch(`${this.baseURL}/goals`, {
+      headers: this.getAuthHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
+  async createGoal(goalData) {
+    const response = await fetch(`${this.baseURL}/goals`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(goalData)
+    });
+    return this.handleResponse(response);
+  }
+
+  async updateGoal(id, goalData) {
+    const response = await fetch(`${this.baseURL}/goals/${id}`, {
+      method: 'PUT',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(goalData)
+    });
+    return this.handleResponse(response);
+  }
+
+  async deleteGoal(id) {
+    const response = await fetch(`${this.baseURL}/goals/${id}`, {
+      method: 'DELETE',
+      headers: this.getAuthHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+}
 export default new ApiService();
 

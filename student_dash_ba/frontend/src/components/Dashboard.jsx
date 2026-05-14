@@ -24,6 +24,8 @@ import {
   HeartIcon,
   UserGroupIcon,
   Bars3Icon,
+  ChevronRightIcon,
+  ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
 import { 
   FireIcon as FireIconSolid,
@@ -48,6 +50,9 @@ const Dashboard = () => {
   // State for API data
   const [dashboardData, setDashboardData] = useState(null);
   const [userData, setUserData] = useState(null);
+  const [schedule, setSchedule] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -59,13 +64,19 @@ const Dashboard = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const [dashboardResponse, userResponse] = await Promise.all([
+      const [dashboardResponse, userResponse, scheduleRes, attendanceRes, goalsRes] = await Promise.all([
         apiService.getDashboard(),
-        apiService.getCurrentUser()
+        apiService.getCurrentUser(),
+        apiService.getSchedule().catch(() => ({ data: [] })),
+        apiService.getAttendance().catch(() => ({ data: [] })),
+        apiService.getGoals().catch(() => ({ data: [] }))
       ]);
 
       setDashboardData(dashboardResponse.data);
-      setUserData(userResponse.data.user);
+      setUserData(userResponse.data.user || userResponse.data);
+      setSchedule(scheduleRes.data || []);
+      setAttendance(attendanceRes.data || []);
+      setGoals(goalsRes.data || []);
     } catch (err) {
       setError(err.message);
       console.error('Error fetching dashboard data:', err);
@@ -74,12 +85,8 @@ const Dashboard = () => {
     }
   };
 
-  // Mock data fallback
-  const weeklyGoals = [
-    { id: 1, title: 'Complete 3 Math topics', progress: 66, completed: false },
-    { id: 2, title: 'Score 85% in Physics quiz', progress: 100, completed: true },
-    { id: 3, title: 'Watch 5 video lessons', progress: 80, completed: false },
-  ];
+  // Use API goals if available, otherwise fallback to empty (since backend is now wired)
+  const displayGoals = goals.length > 0 ? goals : [];
 
   const notifications = [
     { id: 1, title: 'New Physics course added', time: '2 hours ago', type: 'course', read: false },
@@ -87,93 +94,7 @@ const Dashboard = () => {
     { id: 3, title: 'Your doubt was answered', time: '1 day ago', type: 'doubt', read: true },
   ];
 
-  const recommendations = [
-    {
-      id: 1,
-      title: 'Complete Calculus Basics',
-      description: 'You left off at derivatives',
-      type: 'continue',
-      progress: 65,
-      thumbnail: 'https://images.pexels.com/photos/6256065/pexels-photo-6256065.jpeg?auto=compress&cs=tinysrgb&w=300',
-      timeLeft: '15 mins left',
-    },
-    {
-      id: 2,
-      title: 'Quantum Physics Introduction',
-      description: 'Based on your Physics progress',
-      type: 'recommended',
-      difficulty: 'Intermediate',
-      thumbnail: 'https://images.pexels.com/photos/2280549/pexels-photo-2280549.jpeg?auto=compress&cs=tinysrgb&w=300',
-      rating: 4.8,
-    },
-    {
-      id: 3,
-      title: 'Organic Chemistry Reactions',
-      description: 'Strengthen your weak areas',
-      type: 'improvement',
-      lastScore: '72%',
-      thumbnail: 'https://images.pexels.com/photos/2280571/pexels-photo-2280571.jpeg?auto=compress&cs=tinysrgb&w=300',
-      priority: 'High',
-    },
-  ];
 
-  const recentVideos = [
-    {
-      id: 1,
-      title: 'Linear Algebra Fundamentals',
-      thumbnail: 'https://images.pexels.com/photos/6256065/pexels-photo-6256065.jpeg?auto=compress&cs=tinysrgb&w=200',
-      duration: '12:45',
-      progress: 80,
-    },
-    {
-      id: 2,
-      title: 'Newton\'s Laws Explained',
-      thumbnail: 'https://images.pexels.com/photos/2280549/pexels-photo-2280549.jpeg?auto=compress&cs=tinysrgb&w=200',
-      duration: '18:30',
-      progress: 45,
-    },
-    {
-      id: 3,
-      title: 'Chemical Bonding Basics',
-      thumbnail: 'https://images.pexels.com/photos/2280571/pexels-photo-2280571.jpeg?auto=compress&cs=tinysrgb&w=200',
-      duration: '22:15',
-      progress: 30,
-    },
-  ];
-
-  const communityHighlights = [
-    {
-      id: 1,
-      question: 'How to solve quadratic equations faster?',
-      answers: 12,
-      likes: 45,
-      author: 'Sarah M.',
-      time: '2 hours ago',
-    },
-    {
-      id: 2,
-      question: 'Best way to memorize periodic table?',
-      answers: 8,
-      likes: 32,
-      author: 'Mike R.',
-      time: '4 hours ago',
-    },
-    {
-      id: 3,
-      question: 'Understanding calculus derivatives?',
-      answers: 15,
-      likes: 67,
-      author: 'Alex K.',
-      time: '6 hours ago',
-    },
-  ];
-
-  const leaderboard = [
-    { rank: 1, name: 'Alex Chen', points: 2450, avatar: 'https://ui-avatars.com/api/?name=Alex+Chen&background=10b981&color=fff' },
-    { rank: 2, name: 'Sarah Johnson', points: 2380, avatar: 'https://ui-avatars.com/api/?name=Sarah+Johnson&background=f59e0b&color=fff' },
-    { rank: 3, name: 'You', points: 1250, avatar: userData?.avatar || 'https://ui-avatars.com/api/?name=You&background=4f46e5&color=fff', isCurrentUser: true },
-    { rank: 4, name: 'Mike Rodriguez', points: 1180, avatar: 'https://ui-avatars.com/api/?name=Mike+Rodriguez&background=8b5cf6&color=fff' },
-  ];
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -196,34 +117,44 @@ const Dashboard = () => {
     navigate('/doubts');
     toast.success('AI tutor is ready to help!');
   };
-  const handleCreateGoal = () => {
+  const handleCreateGoal = async () => {
     if (!newGoal.title.trim() || !newGoal.target) {
       toast.error('Please fill in all required fields');
       return;
     }
 
-    const goalData = {
-      id: weeklyGoals.length + 1,
-      title: newGoal.title,
-      progress: 0,
-      completed: false,
-      target: parseInt(newGoal.target)
-    };
+    try {
+      const goalData = {
+        title: newGoal.title,
+        progress: 0,
+        completed: false,
+        target: parseInt(newGoal.target)
+      };
 
-    setWeeklyGoals([...weeklyGoals, goalData]);
-    setNewGoal({ title: '', description: '', target: '' });
-    setShowNewGoalModal(false);
-    toast.success('New goal created successfully!');
+      await apiService.createGoal(goalData);
+      
+      setNewGoal({ title: '', description: '', target: '' });
+      setShowNewGoalModal(false);
+      toast.success('New goal created successfully!');
+      fetchDashboardData();
+    } catch (err) {
+      toast.error('Failed to create goal');
+      console.error(err);
+    }
   };
 
-  const toggleGoalCompletion = (goalId) => {
-    setWeeklyGoals(goals => 
-      goals.map(goal => 
-        goal.id === goalId 
-          ? { ...goal, completed: !goal.completed, progress: goal.completed ? goal.progress : 100 }
-          : goal
-      )
-    );
+  const toggleGoalCompletion = async (goalId, currentCompleted) => {
+    try {
+      const updateData = {
+        completed: !currentCompleted,
+        progress: !currentCompleted ? 100 : 0
+      };
+      await apiService.updateGoal(goalId, updateData);
+      fetchDashboardData();
+    } catch (err) {
+      toast.error('Failed to update goal');
+      console.error(err);
+    }
   };
 
   // Get progress data from dashboard data or use defaults
@@ -231,6 +162,64 @@ const Dashboard = () => {
     topicsCompleted: 75,
     assessmentsCompleted: 60,
     weeklyStreak: 6,
+  };
+
+  // Compute Schedule
+  const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const weekDaysTimetable = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const timetableSlots = [
+    { start: '09:00', end: '09:50', label: '1\n09:00 To 09:50' },
+    { start: '10:00', end: '10:50', label: '2\n10:00 To 10:50' },
+    { start: '11:00', end: '11:50', label: '3\n11:00 To 11:50' },
+    { start: '12:00', end: '12:50', label: '4\n12:00 To 12:50' },
+    { start: '13:00', end: '13:50', label: '5\n01:00 To 01:50' },
+    { start: '14:00', end: '14:50', label: '6\n02:00 To 02:50' },
+    { start: '15:00', end: '15:50', label: '7\n03:00 To 03:50' },
+    { start: '16:00', end: '17:30', label: '8\n04:00 To 05:30' },
+  ];
+
+  const getScheduleForSlot = (day, slot) => {
+    return schedule.find(s => s.dayOfWeek === day && s.startTime >= slot.start && s.startTime <= slot.end);
+  };
+  
+  // Compute Attendance Stats
+  const totalClasses = attendance.length;
+  const presentClasses = attendance.filter(a => a.status === 'present').length;
+  const lateClasses = attendance.filter(a => a.status === 'late').length;
+  const absentClasses = attendance.filter(a => a.status === 'absent').length;
+  const attendanceRate = totalClasses === 0 ? 100 : Math.round(((presentClasses + lateClasses) / totalClasses) * 100);
+
+  const handleDownloadAttendanceReport = () => {
+    if (attendance.length === 0) {
+      toast.error('No attendance records available to download.');
+      return;
+    }
+
+    // Generate CSV content
+    const headers = ['Date', 'Class/Subject', 'Status'];
+    const rows = attendance.map(record => [
+      new Date(record.date).toLocaleDateString(),
+      record.class?.subject || 'Class Session',
+      record.status.toUpperCase()
+    ]);
+    
+    // Create CSV string
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.join(','))
+    ].join('\n');
+
+    // Create a Blob and trigger download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Attendance_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success('Attendance report downloaded successfully!');
   };
 
   // Chart configurations
@@ -252,17 +241,7 @@ const Dashboard = () => {
     }],
   };
 
-  const weeklyActivityData = {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    datasets: [{
-      label: 'Study Hours',
-      data: [2, 4, 3, 5, 3, 4, 2],
-      fill: true,
-      borderColor: '#8B5CF6',
-      backgroundColor: 'rgba(139, 92, 246, 0.1)',
-      tension: 0.4,
-    }],
-  };
+
 
   const chartOptions = {
     responsive: true,
@@ -270,15 +249,7 @@ const Dashboard = () => {
     plugins: { legend: { display: false } },
   };
 
-  const lineChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      x: { grid: { display: false } },
-      y: { beginAtZero: true, grid: { color: '#f3f4f6' } },
-    },
-  };
+
 
   // Show loading state while data is being fetched
   if (loading) {
@@ -360,32 +331,7 @@ const Dashboard = () => {
                 </div>
               </div>
               
-              {/* Notifications */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowNotifications(!showNotifications)}
-                  className="relative p-3 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors"
-                >
-                  <BellIcon className="h-6 w-6 lg:h-7 lg:w-7" />
-                  <span className="absolute top-1 right-1 h-3 w-3 bg-red-500 rounded-full"></span>
-                </button>
-                
-                {showNotifications && (
-                  <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-200 z-50">
-                    <div className="p-4 border-b border-gray-200">
-                      <h3 className="font-semibold text-gray-900">Notifications</h3>
-                    </div>
-                    <div className="max-h-64 overflow-y-auto">
-                      {notifications.map(notification => (
-                        <div key={notification.id} className={`p-4 border-b border-gray-100 hover:bg-gray-50 ${!notification.read ? 'bg-blue-50' : ''}`}>
-                          <p className="text-sm font-medium text-gray-900">{notification.title}</p>
-                          <p className="text-xs text-gray-500">{notification.time}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              {/* Notifications removed for now */}
             </div>
 
             <div className="flex flex-col sm:flex-row gap-4 lg:gap-6">
@@ -407,83 +353,160 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Section 2: What's New Banner */}
-        {showWhatsNew && (
-          <div className="mb-8 lg:mb-12">
-            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-2xl p-6 lg:p-8 text-white relative overflow-hidden shadow-md">
-              <button
-                onClick={() => setShowWhatsNew(false)}
-                className="absolute top-4 lg:top-6 right-4 lg:right-6 text-white hover:text-gray-200"
-              >
-                <XMarkIcon className="h-5 w-5 lg:h-6 lg:w-6" />
-              </button>
-              <div className="flex items-center space-x-4 lg:space-x-6">
-                <div className="bg-white bg-opacity-20 p-3 lg:p-4 rounded-full">
-                  <StarIconSolid className="h-6 w-6 lg:h-8 lg:w-8" />
-                </div>
-                <div>
-                  <h3 className="text-xl lg:text-2xl font-bold mb-2">🎉 New AI Features Added!</h3>
-                  <p className="text-purple-100 text-base lg:text-lg">Get personalized learning recommendations powered by advanced AI</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Section 3: Quick Access + Resume Watching - First Priority */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 mb-8 lg:mb-12">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 mb-8 lg:mb-12">
           {/* Quick Access Cards */}
-          <div>
+          <div className="lg:col-span-1">
             <div className="flex items-center justify-between mb-6 lg:mb-8">
-              <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Quick Access</h2>
+              <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Quick Actions</h2>
             </div>
             <div className="grid grid-cols-2 gap-3 lg:gap-4">
               {[
-                { icon: BookOpenIcon, label: 'My Courses', path: '/courses', color: 'bg-blue-50 text-blue-600', bgColor: 'hover:bg-blue-100' },
-                { icon: ClipboardDocumentListIcon, label: 'Assessments', path: '/assessments', color: 'bg-green-50 text-green-600', bgColor: 'hover:bg-green-100' },
-                { icon: ChartBarIcon, label: 'Progress', path: '/progress', color: 'bg-purple-50 text-purple-600', bgColor: 'hover:bg-purple-100' },
-                { icon: UserCircleIcon, label: 'Profile', path: '/profile', color: 'bg-orange-50 text-orange-600', bgColor: 'hover:bg-orange-100' },
+                { icon: BookOpenIcon, label: 'My Courses', path: '/courses', color: 'bg-gradient-to-r from-blue-500 to-blue-600', hoverColor: 'hover:from-blue-600 hover:to-blue-700' },
+                { icon: ClipboardDocumentListIcon, label: 'Assessments', path: '/assessments', color: 'bg-gradient-to-r from-emerald-500 to-emerald-600', hoverColor: 'hover:from-emerald-600 hover:to-emerald-700' },
+                { icon: ChartBarIcon, label: 'Progress', path: '/progress', color: 'bg-gradient-to-r from-purple-500 to-purple-600', hoverColor: 'hover:from-purple-600 hover:to-purple-700' },
+                { icon: UserCircleIcon, label: 'Profile', path: '/profile', color: 'bg-gradient-to-r from-orange-500 to-orange-600', hoverColor: 'hover:from-orange-600 hover:to-orange-700' },
               ].map((item, index) => (
                 <button
                   key={index}
                   onClick={() => navigate(item.path)}
-                  className={`${item.color} ${item.bgColor} p-3 lg:p-5 rounded-xl shadow-sm border border-gray-100 transition-all duration-200 hover:scale-105 hover:shadow-md`}
+                  className={`group ${item.color} ${item.hoverColor} text-white p-4 rounded-xl transition-all duration-200 hover:scale-105 hover:shadow-lg text-left`}
                 >
-                  <item.icon className="h-5 w-5 lg:h-6 lg:w-6 mb-2 lg:mb-3 mx-auto" />
-                  <p className="font-semibold text-gray-900 text-xs lg:text-sm text-center">{item.label}</p>
+                  <div className="flex items-center justify-between mb-3">
+                    <item.icon className="h-6 w-6" />
+                    <ChevronRightIcon className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                  <div className="font-semibold text-sm lg:text-base">{item.label}</div>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Resume Watching */}
-          <div>
+          {/* Attendance Overview */}
+          <div className="lg:col-span-1">
             <div className="flex items-center justify-between mb-6 lg:mb-8">
-              <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Resume Watching</h2>
+              <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Attendance</h2>
+              <span className="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full">{attendanceRate}% Rate</span>
             </div>
-            <div className="space-y-3 lg:space-y-4">
-              {recentVideos.map(video => (
-                <div key={video.id} className="bg-white rounded-xl p-3 lg:p-4 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200">
-                  <div className="flex items-center space-x-3 lg:space-x-4">
-                    <div className="relative flex-shrink-0">
-                      <img src={video.thumbnail} alt={video.title} className="w-16 h-10 lg:w-20 lg:h-12 rounded-lg object-cover" />
-                      <div className="absolute bottom-0.5 right-0.5 bg-black bg-opacity-75 text-white text-xs px-1.5 py-0.5 rounded text-xs">
-                        {video.duration}
-                      </div>
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900 mb-1.5 text-sm lg:text-base line-clamp-2">{video.title}</h3>
-                      <div className="w-full bg-gray-200 rounded-full h-1.5 lg:h-2 mb-1.5">
-                        <div className="bg-indigo-600 h-1.5 lg:h-2 rounded-full transition-all duration-300" style={{ width: `${video.progress}%` }}></div>
-                      </div>
-                      <p className="text-xs text-gray-500 font-medium">{video.progress}% completed</p>
-                    </div>
-                    <button className="text-indigo-600 hover:text-indigo-700 hover:scale-110 transition-all">
-                      <PlayCircleIcon className="h-6 w-6 lg:h-8 lg:w-8" />
-                    </button>
-                  </div>
+            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex flex-col items-center justify-center h-full min-h-[200px]">
+              <div className="flex justify-between w-full mb-6 text-center">
+                <div>
+                  <p className="text-3xl font-bold text-green-500">{presentClasses}</p>
+                  <p className="text-sm text-gray-500">Present</p>
                 </div>
-              ))}
+                <div>
+                  <p className="text-3xl font-bold text-yellow-500">{lateClasses}</p>
+                  <p className="text-sm text-gray-500">Late</p>
+                </div>
+                <div>
+                  <p className="text-3xl font-bold text-red-500">{absentClasses}</p>
+                  <p className="text-sm text-gray-500">Absent</p>
+                </div>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-3 mb-2">
+                <div className="bg-green-500 h-3 rounded-full transition-all duration-300" style={{ width: `${attendanceRate}%` }}></div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2 text-center">Keep up the good attendance!</p>
+              <button 
+                onClick={handleDownloadAttendanceReport}
+                className="mt-6 flex items-center justify-center space-x-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl transition-colors w-full"
+              >
+                <ArrowDownTrayIcon className="w-4 h-4" />
+                <span>Download Report</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Recent Activity */}
+          <div className="lg:col-span-1">
+            <div className="flex items-center justify-between mb-6 lg:mb-8">
+              <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Recent Activity</h2>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6 h-full flex flex-col">
+              <div className="space-y-4 flex-1">
+                {(dashboardData?.recentActivities?.slice(0, 5) || []).length > 0 ? (
+                  dashboardData.recentActivities.slice(0, 5).map((activity) => (
+                    <div key={activity.id} className="flex items-start space-x-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                      <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
+                        <PlayCircleIcon className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{activity.courseTitle}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Accessed {new Date(activity.lastAccessed).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-gray-500 py-8">
+                    <p>No recent activity.</p>
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 pt-4 border-t border-gray-100 text-center">
+                <button 
+                  onClick={() => navigate('/progress')}
+                  className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center justify-center mx-auto space-x-1 hover:bg-indigo-50 px-4 py-2 rounded-xl transition-colors w-full"
+                >
+                  <span>View All Activity</span>
+                  <ArrowRightIcon className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Weekly Timetable Grid Section */}
+        <div className="mb-8 lg:mb-12">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 lg:p-6 overflow-x-auto h-full">
+            <div className="flex items-center justify-between mb-6 min-w-[800px]">
+              <h3 className="text-xl lg:text-2xl font-bold text-gray-900">Weekly Timetable</h3>
+            </div>
+            <div className="min-w-[800px]">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr>
+                    <th className="p-3 border border-gray-200 bg-[#1E293B] text-white font-bold w-24 uppercase">Time Table</th>
+                    {timetableSlots.map((slot, index) => (
+                      <th key={index} className="p-3 border border-gray-200 bg-[#334155] text-white text-center whitespace-pre-line text-xs lg:text-sm">
+                        {slot.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {weekDaysTimetable.map(day => (
+                    <tr key={day}>
+                      <td className="p-3 border border-gray-200 bg-[#334155] text-white font-bold text-center text-xs lg:text-sm">
+                        {day}
+                      </td>
+                      {timetableSlots.map((slot, index) => {
+                        const cellSchedule = getScheduleForSlot(day, slot);
+                        return (
+                          <td 
+                            key={index} 
+                            className={`p-3 border border-gray-200 text-center h-16 ${cellSchedule ? 'bg-[#E0F2FE] hover:bg-[#BAE6FD] transition-colors cursor-pointer' : 'bg-[#F0F9FF] hover:bg-white cursor-pointer group transition-colors'}`}
+                            onClick={() => {
+                              if (cellSchedule) {
+                                navigate('/courses');
+                              }
+                            }}
+                          >
+                            {cellSchedule ? (
+                              <div>
+                                <div className="text-xs lg:text-sm font-bold text-[#0F172A]">{cellSchedule.class?.subject || 'Class'}</div>
+                                <div className="text-[10px] lg:text-xs text-[#334155] mt-1 font-medium">{cellSchedule.class?.name}</div>
+                              </div>
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-gray-400">
+                                No Class
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -500,11 +523,11 @@ const Dashboard = () => {
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-            {weeklyGoals.map(goal => (
-              <div key={goal.id} className="bg-white rounded-xl p-4 lg:p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200">
+            {displayGoals.map(goal => (
+              <div key={goal._id} className="bg-white rounded-xl p-4 lg:p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200">
                 <div className="flex items-start space-x-4">
                   <button
-                    onClick={() => toggleGoalCompletion(goal.id)}
+                    onClick={() => toggleGoalCompletion(goal._id, goal.completed)}
                     className={`flex-shrink-0 w-6 h-6 lg:w-7 lg:h-7 rounded-full border-2 flex items-center justify-center mt-0.5 transition-all ${
                       goal.completed ? 'bg-green-500 border-green-500' : 'border-gray-300 hover:border-green-500'
                     }`}
@@ -603,160 +626,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Section 6: Recommended for You - Fourth Priority */}
-        <div className="mb-8 lg:mb-12">
-          <div className="flex items-center justify-between mb-6 lg:mb-8">
-            <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Recommended for You</h2>
-            <button 
-              onClick={() => navigate('/courses')}
-              className="text-indigo-600 hover:text-indigo-700 font-medium flex items-center space-x-2 text-sm lg:text-base"
-            >
-              <span>View All</span>
-              <ArrowRightIcon className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-            {recommendations.map(item => (
-              <div key={item.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-all duration-300 hover:scale-105">
-                <div className="relative">
-                  <img src={item.thumbnail} alt={item.title} className="w-full h-32 lg:h-40 object-cover" />
-                  <div className="absolute top-4 left-4">
-                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                      item.type === 'continue' ? 'bg-blue-100 text-blue-800' :
-                      item.type === 'recommended' ? 'bg-green-100 text-green-800' :
-                      'bg-orange-100 text-orange-800'
-                    }`}>
-                      {item.type === 'continue' ? 'Continue' : 
-                       item.type === 'recommended' ? 'Recommended' : 'Improve'}
-                    </span>
-                  </div>
-                  {item.progress && (
-                    <div className="absolute bottom-4 right-4 bg-black bg-opacity-75 text-white px-3 py-1 rounded-lg text-sm font-medium">
-                      {item.timeLeft}
-                    </div>
-                  )}
-                </div>
-                <div className="p-6">
-                  <h3 className="font-bold text-gray-900 mb-2 text-base lg:text-lg">{item.title}</h3>
-                  <p className="text-gray-600 mb-3 text-sm lg:text-base">{item.description}</p>
-                  {item.progress && (
-                    <div className="mb-3">
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${item.progress}%` }}></div>
-                      </div>
-                    </div>
-                  )}
-                  {item.rating && (
-                    <div className="flex items-center mb-3">
-                      <StarIconSolid className="h-5 w-5 text-yellow-400" />
-                      <span className="text-gray-600 ml-2 font-medium text-sm">{item.rating}</span>
-                    </div>
-                  )}
-                  <button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 lg:py-3 rounded-lg font-semibold transition-colors shadow-sm text-sm lg:text-base">
-                    {item.type === 'continue' ? 'Continue' : 'Start Learning'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
 
-        {/* Section 7: Community & Leaderboard - Remaining Same */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 mb-8 lg:mb-12">
-          {/* Community Highlights */}
-          <div>
-            <div className="flex items-center justify-between mb-6 lg:mb-8">
-              <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Community Highlights</h2>
-            </div>
-            <div className="bg-white rounded-xl p-4 lg:p-6 shadow-sm border border-gray-100">
-              <div className="space-y-6">
-                {communityHighlights.map(item => (
-                  <div key={item.id} className="border-b border-gray-100 pb-6 last:border-b-0 last:pb-0">
-                    <h3 className="font-semibold text-gray-900 mb-3 text-sm lg:text-base">{item.question}</h3>
-                    <div className="flex items-center justify-between text-sm text-gray-500">
-                      <div className="flex items-center space-x-4">
-                        <span className="font-medium">by {item.author}</span>
-                        <span>{item.time}</span>
-                      </div>
-                      <div className="flex items-center space-x-4">
-                        <span className="flex items-center">
-                          <ChatBubbleLeftEllipsisIcon className="h-4 w-4 mr-1" />
-                          {item.answers}
-                        </span>
-                        <span className="flex items-center">
-                          <HeartIconSolid className="h-4 w-4 mr-1 text-red-500" />
-                          {item.likes}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button 
-                onClick={() => navigate('/doubts')}
-                className="w-full mt-6 text-indigo-600 hover:text-indigo-700 font-semibold py-3 border border-indigo-200 rounded-xl hover:bg-indigo-50 transition-colors"
-              >
-                View All Discussions →
-              </button>
-            </div>
-          </div>
-
-          {/* Leaderboard */}
-          <div>
-            <div className="flex items-center justify-between mb-6 lg:mb-8">
-              <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Top Learners</h2>
-            </div>
-            <div className="bg-white rounded-xl p-4 lg:p-6 shadow-sm border border-gray-100">
-              <div className="space-y-4">
-                {leaderboard.map(user => (
-                  <div key={user.rank} className={`flex items-center space-x-3 lg:space-x-4 p-3 lg:p-4 rounded-lg transition-all ${user.isCurrentUser ? 'bg-indigo-50 border-2 border-indigo-200' : 'hover:bg-gray-50'}`}>
-                    <div className={`w-8 h-8 lg:w-10 lg:h-10 rounded-full flex items-center justify-center text-sm font-bold ${
-                      user.rank === 1 ? 'bg-yellow-100 text-yellow-800' :
-                      user.rank === 2 ? 'bg-gray-100 text-gray-800' :
-                      user.rank === 3 ? 'bg-orange-100 text-orange-800' :
-                      'bg-gray-100 text-gray-600'
-                    }`}>
-                      {user.rank}
-                    </div>
-                    <img src={user.avatar} alt={user.name} className="w-10 h-10 lg:w-12 lg:h-12 rounded-full border-2 border-gray-200" />
-                    <div className="flex-1">
-                      <p className={`font-semibold text-lg ${user.isCurrentUser ? 'text-indigo-900' : 'text-gray-900'}`}>
-                        {user.name}
-                      </p>
-                      <p className="text-gray-500 font-medium text-sm">{user.points} points</p>
-                    </div>
-                    {user.rank <= 3 && (
-                      <TrophyIcon className={`h-5 w-5 lg:h-6 lg:w-6 ${
-                        user.rank === 1 ? 'text-yellow-500' :
-                        user.rank === 2 ? 'text-gray-400' :
-                        'text-orange-500'
-                      }`} />
-                    )}
-                  </div>
-                ))}
-              </div>
-              <button className="w-full mt-6 text-indigo-600 hover:text-indigo-700 font-semibold py-3 border border-indigo-200 rounded-xl hover:bg-indigo-50 transition-colors">
-                View Full Leaderboard →
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Section 8: Weekly Activity Chart - Remaining Same */}
-        <div className="mb-8 lg:mb-12">
-          <div className="flex items-center justify-between mb-6 lg:mb-8">
-            <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Weekly Activity</h2>
-            <button className="text-indigo-600 hover:text-indigo-700 font-medium flex items-center space-x-2 text-sm lg:text-base">
-              <span>View Analytics</span>
-              <ArrowRightIcon className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="bg-white rounded-xl p-4 lg:p-6 shadow-sm border border-gray-100">
-            <div className="h-48 lg:h-64">
-              <Line data={weeklyActivityData} options={lineChartOptions} />
-            </div>
-          </div>
-        </div>
 
         {/* Section 9: Footer - Remaining Same */}
         <div className="bg-white rounded-xl p-4 lg:p-6 shadow-sm border border-gray-100">

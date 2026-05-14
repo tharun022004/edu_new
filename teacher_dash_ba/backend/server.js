@@ -37,15 +37,7 @@ app.use(helmet({
 }));
 app.use(compression());
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: (process.env.RATE_LIMIT_WINDOW || 15) * 60 * 1000, // 15 minutes
-  max: process.env.RATE_LIMIT_MAX_REQUESTS || 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
-});
-app.use('/api/', limiter);
-
-// CORS configuration
+// CORS configuration MUST be before rate limiter so rejected requests still get CORS headers
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://your-frontend-domain.com'] 
@@ -54,6 +46,16 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
+
+// Rate limiting (Disabled in development to prevent 429 errors during testing)
+if (process.env.NODE_ENV === 'production') {
+  const limiter = rateLimit({
+    windowMs: (process.env.RATE_LIMIT_WINDOW || 15) * 60 * 1000, // 15 minutes
+    max: process.env.RATE_LIMIT_MAX_REQUESTS || 1000, 
+    message: 'Too many requests from this IP, please try again later.',
+  });
+  app.use('/api/', limiter);
+}
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -177,6 +179,8 @@ app.use('/api/content', protect, authorize('teacher'), contentRoutes);
 app.use('/api/teacher-notes', protect, authorize('teacher'), require('./routes/teacherNotes'));
 app.use('/api/student-notes', require('./routes/studentNotes'));
 app.use('/api/dashboard', protect, authorize('teacher'), dashboardRoutes);
+app.use('/api/schedule', protect, authorize('teacher'), require('./routes/schedule'));
+app.use('/api/attendance', protect, authorize('teacher'), require('./routes/attendance'));
 
 // 404 handler
 app.use('*', (req, res) => {

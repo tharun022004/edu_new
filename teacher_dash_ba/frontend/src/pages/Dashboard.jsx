@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
   Users, 
   BookOpen, 
@@ -36,12 +36,22 @@ import {
 import apiService from '../services/api';
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showAddScheduleModal, setShowAddScheduleModal] = useState(false);
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showClassDetailsModal, setShowClassDetailsModal] = useState(false);
+  const [attendanceModal, setAttendanceModal] = useState({ show: false, scheduleItem: null, records: [] });
+  
+  const [newSchedule, setNewSchedule] = useState({
+    class: '',
+    dayOfWeek: 'Monday',
+    startTime: '',
+    endTime: ''
+  });
   const [newTask, setNewTask] = useState({
     task: '',
     priority: 'medium',
@@ -58,6 +68,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
+
+  const [classes, setClasses] = useState([]);
 
   // Fetch dashboard data on component mount
   useEffect(() => {
@@ -125,6 +137,14 @@ const Dashboard = () => {
         console.warn('Failed to load schedule:', err);
         setSchedule([]);
       }
+
+      try {
+        const classesResponse = await apiService.getClasses();
+        setClasses(classesResponse.data || []);
+      } catch (err) {
+        console.warn('Failed to load classes:', err);
+        setClasses([]);
+      }
     } catch (err) {
       // Only set error state if all API calls fail
       if (!dashboardStats && !tasks && !recentActivity && !notifications && !schedule) {
@@ -136,13 +156,7 @@ const Dashboard = () => {
     }
   };
 
-  const [todayTasks, setTodayTasks] = useState([
-    { id: 1, task: 'Grade Algebra Quiz - 8th A', priority: 'high', completed: false, dueTime: '2:00 PM', subject: 'Math' },
-    { id: 2, task: 'Prepare Geometry Notes', priority: 'medium', completed: false, dueTime: '4:00 PM', subject: 'Math' },
-    { id: 3, task: 'Review Assignment Submissions', priority: 'high', completed: false, dueTime: 'Tomorrow', subject: 'General' },
-    { id: 4, task: 'Update Parent Progress Reports', priority: 'low', completed: true, dueTime: 'Done', subject: 'Admin' },
-    { id: 5, task: 'Plan Next Week\'s Lessons', priority: 'medium', completed: false, dueTime: 'Friday', subject: 'Planning' },
-  ]);
+
 
   // Update time every minute
   useEffect(() => {
@@ -239,126 +253,168 @@ const Dashboard = () => {
     },
   ];
 
-  const nextClass = {
-    subject: 'Mathematics',
-    grade: '8th Grade A',
-    time: '10:30 AM',
-    room: 'Room 204',
-    studentsCount: 30,
-    topic: 'Quadratic Equations',
-    timeUntil: '45 minutes',
-    color: 'from-indigo-500 to-purple-600'
-  };
-
-  const todaySchedule = [
-    { time: '08:00', subject: 'Math', grade: '9th A', room: '201', status: 'completed', color: 'bg-emerald-100 text-emerald-700' },
-    { time: '09:30', subject: 'Math', grade: '8th B', room: '203', status: 'completed', color: 'bg-emerald-100 text-emerald-700' },
-    { time: '10:30', subject: 'Math', grade: '8th A', room: '204', status: 'current', color: 'bg-blue-100 text-blue-700 ring-2 ring-blue-300' },
-    { time: '12:00', subject: 'Math', grade: '10th A', room: '205', status: 'upcoming', color: 'bg-gray-100 text-gray-700' },
-    { time: '14:00', subject: 'Math', grade: '9th C', room: '202', status: 'upcoming', color: 'bg-gray-100 text-gray-700' },
+  const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const weekDaysTimetable = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const timetableSlots = [
+    { start: '09:00', end: '09:50', label: '1\n09:00 To 09:50' },
+    { start: '10:00', end: '10:50', label: '2\n10:00 To 10:50' },
+    { start: '11:00', end: '11:50', label: '3\n11:00 To 11:50' },
+    { start: '12:00', end: '12:50', label: '4\n12:00 To 12:50' },
+    { start: '13:00', end: '13:50', label: '5\n01:00 To 01:50' },
+    { start: '14:00', end: '14:50', label: '6\n02:00 To 02:50' },
+    { start: '15:00', end: '15:50', label: '7\n03:00 To 03:50' },
+    { start: '16:00', end: '17:30', label: '8\n04:00 To 05:30' },
   ];
 
-  const handleAddTask = (e) => {
-    e.preventDefault();
-    const newTaskData = {
-      id: todayTasks.length + 1,
-      task: newTask.task,
-      priority: newTask.priority,
-      completed: false,
-      dueTime: newTask.dueTime,
-      subject: newTask.subject
-    };
-    
-    setTodayTasks([...todayTasks, newTaskData]);
-    setShowAddTaskModal(false);
-    setNewTask({
-      task: '',
-      priority: 'medium',
-      dueTime: '',
-      subject: 'General'
-    });
+  const getScheduleForSlot = (day, slot) => {
+    return schedule.find(s => s.dayOfWeek === day && s.startTime >= slot.start && s.startTime <= slot.end);
   };
 
-  const handleToggleTask = (taskId) => {
-    setTodayTasks(todayTasks.map(task => 
-      task.id === taskId 
-        ? { ...task, completed: !task.completed }
-        : task
-    ));
+  const todayName = daysOfWeek[currentTime.getDay()];
+  const nowHHMM = currentTime.getHours().toString().padStart(2, '0') + ':' + currentTime.getMinutes().toString().padStart(2, '0');
+
+  const getNextClass = () => {
+    if (!schedule || schedule.length === 0) return null;
+    let todayIndex = currentTime.getDay();
+
+    for (let i = 0; i < 7; i++) {
+      const searchDay = daysOfWeek[(todayIndex + i) % 7];
+      let daySchedule = schedule.filter(s => s.dayOfWeek === searchDay).sort((a, b) => a.startTime.localeCompare(b.startTime));
+      
+      if (i === 0) {
+         // Today, filter by future classes (or currently active)
+         daySchedule = daySchedule.filter(s => s.endTime > nowHHMM);
+      }
+      
+      if (daySchedule.length > 0) {
+         return {
+           original: daySchedule[0],
+           daysFromNow: i
+         };
+      }
+    }
+    return null;
+  };
+
+  const nextClassData = getNextClass();
+
+  const nextClass = nextClassData ? {
+    subject: nextClassData.original.class?.subject || 'Subject',
+    grade: nextClassData.original.class?.grade || '',
+    time: `${nextClassData.original.startTime} - ${nextClassData.original.endTime}`,
+    room: nextClassData.original.class?.name || '',
+    studentsCount: nextClassData.original.class?.students?.length || 0,
+    topic: 'Scheduled Session',
+    timeUntil: nextClassData.daysFromNow === 0 
+               ? (nextClassData.original.startTime > nowHHMM ? `Today at ${nextClassData.original.startTime}` : 'In Progress')
+               : (nextClassData.daysFromNow === 1 ? `Tomorrow at ${nextClassData.original.startTime}` : `In ${nextClassData.daysFromNow} days`),
+    color: 'from-indigo-500 to-purple-600',
+    dayOfWeek: nextClassData.original.dayOfWeek
+  } : {
+    subject: 'No upcoming classes',
+    grade: '',
+    time: '--:--',
+    room: '-',
+    studentsCount: 0,
+    topic: '-',
+    timeUntil: '',
+    color: 'from-gray-500 to-gray-600',
+    dayOfWeek: ''
+  };
+
+  const handleAddTask = async (e) => {
+    e.preventDefault();
+    try {
+      const taskData = {
+        title: newTask.task,
+        priority: newTask.priority,
+        dueDate: new Date().toISOString()
+      };
+      
+      await apiService.createTask(taskData);
+      setShowAddTaskModal(false);
+      setNewTask({
+        task: '',
+        priority: 'medium',
+        dueTime: '',
+        subject: 'General'
+      });
+      fetchDashboardData();
+    } catch (err) {
+      console.error('Failed to create task:', err);
+    }
+  };
+
+  const handleAddSchedule = async (e) => {
+    e.preventDefault();
+    try {
+      await apiService.createSchedule(newSchedule);
+      setShowAddScheduleModal(false);
+      setNewSchedule({ class: '', dayOfWeek: 'Monday', startTime: '', endTime: '' });
+      fetchDashboardData();
+    } catch (err) {
+      console.error('Failed to create schedule:', err);
+      alert('Failed to create schedule');
+    }
+  };
+
+  const openAttendanceModal = async (scheduleItem) => {
+    try {
+      // Fetch students for the class
+      const classRes = await apiService.api.get(`/classes/${scheduleItem.class._id}`);
+      const students = classRes.data.data.students || [];
+
+      // Fetch existing attendance for today if any
+      const today = new Date().toISOString().split('T')[0];
+      const attendanceRes = await apiService.getClassAttendance(scheduleItem.class._id);
+      
+      let records = students.map(s => ({ student: s._id, name: s.fullName, status: 'present' }));
+
+      // If attendance was already submitted today, use those records
+      const todayAttendance = attendanceRes.data.find(a => a.date.startsWith(today));
+      if (todayAttendance) {
+        records = records.map(r => {
+          const existing = todayAttendance.records.find(tr => tr.student._id === r.student);
+          return { ...r, status: existing ? existing.status : 'present' };
+        });
+      }
+
+      setAttendanceModal({ show: true, scheduleItem, records });
+    } catch (err) {
+      console.error('Failed to prepare attendance:', err);
+    }
+  };
+
+  const submitAttendance = async () => {
+    try {
+      const recordsToSubmit = attendanceModal.records.map(r => ({ student: r.student, status: r.status }));
+      await apiService.submitAttendance({
+        classId: attendanceModal.scheduleItem.class._id,
+        date: new Date().toISOString().split('T')[0],
+        records: recordsToSubmit
+      });
+      setAttendanceModal({ show: false, scheduleItem: null, records: [] });
+      alert('Attendance saved successfully!');
+    } catch (err) {
+      console.error('Failed to submit attendance:', err);
+      alert('Failed to submit attendance');
+    }
+  };
+
+  const handleToggleTask = async (task) => {
+    try {
+      await apiService.updateTask(task._id, { completed: !task.completed });
+      fetchDashboardData();
+    } catch (err) {
+      console.error('Failed to update task:', err);
+    }
   };
 
   const handleViewClassDetails = () => {
     setShowClassDetailsModal(true);
   };
 
-  const aiSuggestions = [
-    {
-      id: 1,
-      title: 'Generate Quiz from Notes',
-      description: 'Create quiz from Trigonometry notes',
-      action: 'Generate',
-      icon: Brain,
-      color: 'from-violet-500 to-purple-600'
-    },
-    {
-      id: 2,
-      title: 'Analyze Performance',
-      description: 'Get insights on 8th Grade A',
-      action: 'Analyze',
-      icon: BarChart3,
-      color: 'from-emerald-500 to-teal-600'
-    },
-    {
-      id: 3,
-      title: 'Create Study Guide',
-      description: 'Auto-generate exam materials',
-      action: 'Create',
-      icon: BookmarkCheck,
-      color: 'from-blue-500 to-indigo-600'
-    },
-  ];
-
-  const mockRecentActivity = [
-    {
-      id: 1,
-      student: 'Sarah Johnson',
-      action: 'submitted Algebra Quiz',
-      time: '2 hours ago',
-      type: 'submission',
-      icon: CheckCircle,
-      color: 'text-emerald-600'
-    },
-    {
-      id: 2,
-      student: 'Mike Chen',
-      action: 'asked about Quadratic Equations',
-      time: '4 hours ago',
-      type: 'doubt',
-      icon: HelpCircle,
-      color: 'text-amber-600'
-    },
-    {
-      id: 3,
-      student: 'Emma Davis',
-      action: 'completed Chapter 5 reading',
-      time: '6 hours ago',
-      type: 'progress',
-      icon: BookOpen,
-      color: 'text-blue-600'
-    },
-    {
-      id: 4,
-      student: 'John Smith',
-      action: 'submitted Geometry assignment',
-      time: '1 day ago',
-      type: 'submission',
-      icon: FileText,
-      color: 'text-violet-600'
-    },
-  ];
-
-  // Use API data if available, otherwise use mock data
-  const displayRecentActivity = recentActivity.length > 0 ? recentActivity : mockRecentActivity;
+  const displayRecentActivity = recentActivity.slice(0, 10);
 
   const getPriorityColor = (priority) => {
     switch (priority) {
@@ -455,51 +511,11 @@ const Dashboard = () => {
                   </div>
                 </div>
               </div>
-              <div className="p-6">
-                <div className="flex items-center justify-between text-sm text-gray-600 mb-4">
-                  <span>Topic: {nextClass.topic}</span>
-                  <span>{nextClass.studentsCount} students</span>
+              <div className="p-4 bg-gray-50 flex items-center justify-between text-sm text-gray-600 border-t border-gray-100">
+                <div className="flex items-center space-x-2">
+                  <Users className="w-4 h-4" />
+                  <span>{nextClass.studentsCount} Students Registered</span>
                 </div>
-              </div>
-            </div>
-
-            {/* Today's Schedule */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold text-gray-900">Today's Schedule</h3>
-                <Calendar className="w-5 h-5 text-gray-500" />
-              </div>
-              <div className="space-y-3">
-                {todaySchedule.map((item, index) => (
-                  <div key={index} className={`p-3 rounded-xl transition-all duration-200 ${item.color}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="text-sm font-bold">{item.time}</div>
-                        <div className="text-sm">
-                          <div className="font-medium">{item.subject}</div>
-                          <div className="text-xs opacity-75">{item.grade} • {item.room}</div>
-                        </div>
-                      </div>
-                      {item.status === 'current' && (
-                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex space-x-2 mt-4">
-                <button 
-                  onClick={() => setShowScheduleModal(true)}
-                  className="flex-1 text-indigo-600 hover:text-indigo-700 text-sm font-medium py-2 hover:bg-indigo-50 rounded-xl transition-colors"
-                >
-                  View Full Schedule
-                </button>
-                <button 
-                  onClick={() => setShowClassDetailsModal(true)}
-                  className="flex-1 bg-indigo-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors"
-                >
-                  View Class Details
-                </button>
               </div>
             </div>
           </div>
@@ -515,23 +531,23 @@ const Dashboard = () => {
                   <Target className="w-5 h-5 text-gray-500" />
                 </div>
                 <div className="space-y-3">
-                  {todayTasks.slice(0, 4).map((item) => (
-                    <div key={item.id} className="flex items-start space-x-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                  {tasks.slice(0, 4).map((item) => (
+                    <div key={item._id} className="flex items-start space-x-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
                       <input
                         type="checkbox"
                         checked={item.completed}
-                        onChange={() => handleToggleTask(item.id)}
+                        onChange={() => handleToggleTask(item)}
                         className="mt-1 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                       />
                       <div className="flex-1 min-w-0">
                         <div className={`text-sm font-medium ${item.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
-                          {item.task}
+                          {item.title}
                         </div>
                         <div className="flex items-center justify-between mt-1">
                           <span className={`text-xs px-2 py-1 rounded-full border ${getPriorityColor(item.priority)}`}>
                             {item.priority.toUpperCase()}
                           </span>
-                          <span className="text-xs text-gray-500">{item.dueTime}</span>
+                          <span className="text-xs text-gray-500">{new Date(item.dueDate).toLocaleDateString()}</span>
                         </div>
                       </div>
                     </div>
@@ -554,37 +570,7 @@ const Dashboard = () => {
                 </div>
               </div>
 
-              {/* AI Suggestions */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center space-x-2">
-                    <Sparkles className="w-5 h-5 text-violet-600" />
-                    <h3 className="text-lg font-bold text-gray-900">AI Suggestions</h3>
-                  </div>
-                  <div className="bg-violet-100 text-violet-700 px-2 py-1 rounded-full text-xs font-medium">
-                    Smart
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  {aiSuggestions.map((suggestion) => {
-                    const Icon = suggestion.icon || Brain; // Default to Brain icon if undefined
-                    return (
-                      <div key={suggestion.id} className="p-4 rounded-xl border-2 border-gray-100 hover:border-violet-200 hover:shadow-md transition-all duration-200">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className={`p-2 rounded-lg bg-gradient-to-r ${suggestion.color || 'from-violet-500 to-purple-600'}`}>
-                            <Icon className="w-4 h-4 text-white" />
-                          </div>
-                          <button className="bg-violet-50 hover:bg-violet-100 text-violet-700 px-3 py-1 rounded-lg text-sm font-medium transition-colors">
-                            {suggestion.action}
-                          </button>
-                        </div>
-                        <h4 className="font-semibold text-gray-900 mb-1">{suggestion.title}</h4>
-                        <p className="text-sm text-gray-600">{suggestion.description}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              {/* Removed AI Suggestions placeholder */}
             </div>
 
             {/* Recent Activity */}
@@ -625,6 +611,76 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+
+        {/* Weekly Timetable Grid Section */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 overflow-x-auto">
+          <div className="flex items-center justify-between mb-6 min-w-[800px]">
+            <h3 className="text-xl font-bold text-gray-900">Weekly Timetable</h3>
+            <button 
+              onClick={() => setShowAddScheduleModal(true)}
+              className="bg-indigo-100 text-indigo-700 px-4 py-2 rounded-xl hover:bg-indigo-200 transition-colors flex items-center space-x-2"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Add Schedule</span>
+            </button>
+          </div>
+          <div className="min-w-[800px]">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className="p-3 border border-gray-200 bg-[#1E293B] text-white font-bold w-24 uppercase">Time Table</th>
+                  {timetableSlots.map((slot, index) => (
+                    <th key={index} className="p-3 border border-gray-200 bg-[#334155] text-white text-center whitespace-pre-line text-sm">
+                      {slot.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {weekDaysTimetable.map(day => (
+                  <tr key={day}>
+                    <td className="p-3 border border-gray-200 bg-[#334155] text-white font-bold text-center text-sm">
+                      {day}
+                    </td>
+                    {timetableSlots.map((slot, index) => {
+                      const cellSchedule = getScheduleForSlot(day, slot);
+                      return (
+                        <td 
+                          key={index} 
+                          className={`p-3 border border-gray-200 text-center h-16 ${cellSchedule ? 'bg-[#E0F2FE] hover:bg-[#BAE6FD] transition-colors cursor-pointer' : 'bg-[#F0F9FF] hover:bg-white cursor-pointer group transition-colors'}`}
+                          onClick={() => {
+                            if (cellSchedule) {
+                              navigate('/attendance', { state: { classId: cellSchedule.class?._id || cellSchedule.class } });
+                            } else {
+                              setNewSchedule({
+                                class: '',
+                                dayOfWeek: day,
+                                startTime: slot.start,
+                                endTime: slot.end
+                              });
+                              setShowAddScheduleModal(true);
+                            }
+                          }}
+                        >
+                          {cellSchedule ? (
+                            <div>
+                              <div className="text-sm font-bold text-[#0F172A]">{cellSchedule.class?.name || 'Class'}</div>
+                              <div className="text-xs text-[#334155] mt-1 font-medium">{cellSchedule.class?.subject}</div>
+                            </div>
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Plus className="w-4 h-4 text-indigo-400" />
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       {/* View All Tasks Modal */}
@@ -642,23 +698,23 @@ const Dashboard = () => {
             </div>
             
             <div className="space-y-4">
-              {todayTasks.map((task) => (
-                <div key={task.id} className="flex items-start space-x-3 p-4 bg-gray-50 rounded-xl">
+              {tasks.map((task) => (
+                <div key={task._id} className="flex items-start space-x-3 p-4 bg-gray-50 rounded-xl">
                   <input
                     type="checkbox"
                     checked={task.completed}
-                    onChange={() => handleToggleTask(task.id)}
+                    onChange={() => handleToggleTask(task)}
                     className="mt-1 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                   />
                   <div className="flex-1 min-w-0">
                     <div className={`text-sm font-medium ${task.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
-                      {task.task}
+                      {task.title}
                     </div>
                     <div className="flex items-center justify-between mt-1">
                       <span className={`text-xs px-2 py-1 rounded-full border ${getPriorityColor(task.priority)}`}>
                         {task.priority.toUpperCase()}
                       </span>
-                      <span className="text-xs text-gray-500">{task.dueTime}</span>
+                      <span className="text-xs text-gray-500">{new Date(task.dueDate).toLocaleDateString()}</span>
                     </div>
                   </div>
                 </div>
@@ -766,46 +822,123 @@ const Dashboard = () => {
         </div>
       )}
 
-      {/* Full Schedule Modal */}
-      {showScheduleModal && (
+      {/* Add Schedule Modal */}
+      {showAddScheduleModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold text-gray-900">Add to Schedule</h3>
+              <button onClick={() => setShowAddScheduleModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={handleAddSchedule} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>
+                <select
+                  required
+                  value={newSchedule.class}
+                  onChange={(e) => setNewSchedule({...newSchedule, class: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">Select a Class</option>
+                  {classes.map(c => (
+                    <option key={c._id} value={c._id}>{c.name} - {c.subject}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Day of Week</label>
+                <select
+                  required
+                  value={newSchedule.dayOfWeek}
+                  onChange={(e) => setNewSchedule({...newSchedule, dayOfWeek: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                >
+                  {daysOfWeek.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div className="flex space-x-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                  <input
+                    type="time"
+                    required
+                    value={newSchedule.startTime}
+                    onChange={(e) => setNewSchedule({...newSchedule, startTime: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                  <input
+                    type="time"
+                    required
+                    value={newSchedule.endTime}
+                    onChange={(e) => setNewSchedule({...newSchedule, endTime: e.target.value})}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-indigo-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-colors mt-4"
+              >
+                Save Schedule
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Attendance Modal */}
+      {attendanceModal.show && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-2xl font-bold text-gray-900">Full Schedule</h3>
+              <h3 className="text-2xl font-bold text-gray-900">
+                Attendance: {attendanceModal.scheduleItem?.class.name}
+              </h3>
               <button 
-                onClick={() => setShowScheduleModal(false)}
-                className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-all duration-200"
+                onClick={() => setAttendanceModal({ show: false, scheduleItem: null, records: [] })}
+                className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-all"
               >
                 <X className="w-6 h-6" />
               </button>
             </div>
             
             <div className="space-y-4">
-              {todaySchedule.map((item, index) => (
-                <div key={index} className={`p-4 rounded-xl transition-all duration-200 ${item.color}`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div className="text-lg font-bold">{item.time}</div>
-                      <div>
-                        <div className="font-medium">{item.subject}</div>
-                        <div className="text-sm opacity-75">{item.grade} • {item.room}</div>
-                      </div>
-                    </div>
-                    {item.status === 'current' && (
-                      <div className="flex items-center space-x-2">
-                        <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
-                        <span className="text-sm font-medium">Current</span>
-                      </div>
-                    )}
-                    {item.status === 'completed' && (
-                      <CheckCircle className="w-5 h-5 text-green-600" />
-                    )}
-                    {item.status === 'upcoming' && (
-                      <Clock className="w-5 h-5 text-gray-500" />
-                    )}
-                  </div>
+              {attendanceModal.records.map((record, idx) => (
+                <div key={record.student} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                  <span className="font-medium">{record.name}</span>
+                  <select 
+                    value={record.status}
+                    onChange={(e) => {
+                      const newRecords = [...attendanceModal.records];
+                      newRecords[idx].status = e.target.value;
+                      setAttendanceModal({ ...attendanceModal, records: newRecords });
+                    }}
+                    className={`px-3 py-1 rounded-lg border ${
+                      record.status === 'present' ? 'bg-green-100 text-green-800 border-green-200' :
+                      record.status === 'absent' ? 'bg-red-100 text-red-800 border-red-200' :
+                      'bg-yellow-100 text-yellow-800 border-yellow-200'
+                    }`}
+                  >
+                    <option value="present">Present</option>
+                    <option value="absent">Absent</option>
+                    <option value="late">Late</option>
+                  </select>
                 </div>
               ))}
+            </div>
+            
+            <div className="mt-6 flex justify-end">
+              <button 
+                onClick={submitAttendance}
+                className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-medium hover:bg-indigo-700 transition-colors"
+              >
+                Submit Attendance
+              </button>
             </div>
           </div>
         </div>

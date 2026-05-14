@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Plus, 
   ChevronDown,
@@ -40,6 +41,30 @@ import {
 import apiService from '../services/api';
 
 const ClassContent = ({ classId, classData }) => {
+  const navigate = useNavigate();
+  const [teacherClasses, setTeacherClasses] = useState([]);
+  const [loadingClasses, setLoadingClasses] = useState(false);
+  const [showClassSelectModal, setShowClassSelectModal] = useState(!classId);
+
+  useEffect(() => {
+    if (!classId) {
+      const fetchClasses = async () => {
+        setLoadingClasses(true);
+        try {
+          const response = await apiService.getClasses();
+          if (response.data) {
+            setTeacherClasses(response.data);
+          }
+        } catch (error) {
+          console.error('Error fetching classes:', error);
+        } finally {
+          setLoadingClasses(false);
+        }
+      };
+      fetchClasses();
+    }
+  }, [classId]);
+
   const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedChapter, setSelectedChapter] = useState(null);
   const [expandedSubtopics, setExpandedSubtopics] = useState([]);
@@ -640,12 +665,58 @@ const ClassContent = ({ classId, classData }) => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
         <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-8 max-w-md text-center">
           <BookOpen className="w-16 h-16 text-indigo-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Select a Class to View Content</h2>
-          <p className="text-gray-600">
-            Please go to <span className="font-semibold">My Classes</span>, open a class, and use the
-            <span className="font-semibold"> Content</span> tab to manage materials for that class.
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Select a Class</h2>
+          <p className="text-gray-600 mb-6">
+            Please select a class to view and manage its content.
           </p>
+          <button
+            onClick={() => setShowClassSelectModal(true)}
+            className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-indigo-700 transition-all duration-200"
+          >
+            Select Class
+          </button>
         </div>
+
+        {/* Class Selection Modal */}
+        {showClassSelectModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-8 w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-bold text-gray-900">Select a Class</h3>
+                <button
+                  onClick={() => setShowClassSelectModal(false)}
+                  className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-all duration-200"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {loadingClasses ? (
+                <div className="flex-1 flex items-center justify-center py-12">
+                  <Loader className="w-10 h-10 text-indigo-600 animate-spin" />
+                </div>
+              ) : teacherClasses.length === 0 ? (
+                <div className="text-center py-12">
+                  <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">No classes found. Create one first.</p>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {teacherClasses.map((cls) => (
+                    <button
+                      key={cls._id}
+                      onClick={() => navigate(`/classes/${cls._id}/content`)}
+                      className="text-left p-4 rounded-xl border border-gray-200 hover:border-indigo-500 hover:shadow-md transition-all duration-200 group"
+                    >
+                      <h4 className="text-lg font-bold text-gray-900 group-hover:text-indigo-600 mb-1">{cls.name}</h4>
+                      <p className="text-sm text-gray-500">{cls.subject} • {cls.students?.length || cls.studentCount || 0} Students</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
