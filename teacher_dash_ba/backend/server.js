@@ -175,6 +175,8 @@ app.use('/api/student-doubts', require('./routes/studentDoubts'));
 app.use('/api/standalone-quizzes', require('./routes/standaloneQuizzes'));
 app.use('/api/student-quizzes', require('./routes/studentQuizzes'));
 app.use('/api/content/student', studentContentRoutes);
+app.use('/api/schedule/student', require('./routes/studentSchedule'));
+app.use('/api/attendance/student', require('./routes/studentAttendance'));
 app.use('/api/content', protect, authorize('teacher'), contentRoutes);
 app.use('/api/teacher-notes', protect, authorize('teacher'), require('./routes/teacherNotes'));
 app.use('/api/student-notes', require('./routes/studentNotes'));

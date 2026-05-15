@@ -1,5 +1,15 @@
 const Class = require('../models/Class');
 const Student = require('../models/Student');
+const { normalizeStudentEmail, displayNameFromEmail } = require('../utils/studentEmail');
+const { getSyncedStudentEnrollments } = require('../utils/studentEnrollment');
+
+function enrollmentClassId(entry) {
+  if (!entry?.class) return null;
+  if (typeof entry.class === 'object' && entry.class._id) {
+    return entry.class._id.toString();
+  }
+  return entry.class.toString();
+}
 
 // @desc    Get all classes for a teacher
 // @route   GET /api/classes
@@ -250,52 +260,82 @@ exports.addStudent = async (req, res, next) => {
       });
     }
 
-    // Create or find student (Student.classes is [{ class, joinedAt, status }])
-    let student = await Student.findOne({ email: req.body.email });
-    
+    const email = normalizeStudentEmail(req.body.email);
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid student email is required (must match their student portal login email)'
+      });
+    }
+
+    const name =
+      (req.body.name && String(req.body.name).trim()) ||
+      displayNameFromEmail(email);
+
+    let student = await Student.findOne({ email });
+    if (!student) {
+      student = await Student.findOne({
+        email: { $regex: new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+      });
+    }
+
     if (!student) {
       student = await Student.create({
-        name: req.body.name,
-        email: req.body.email,
-        studentId: req.body.studentId || `STU${Date.now()}`,
+        name,
+        email,
+        studentId: (req.body.studentId && String(req.body.studentId).trim()) || `STU${Date.now()}`,
         classes: [{ class: classItem._id, joinedAt: new Date(), status: 'active' }]
       });
     } else {
+      if (student.email !== email) {
+        student.email = email;
+      }
       const alreadyInClass = student.classes.some(
-        c => c.class && c.class.toString() === classItem._id.toString()
+        (entry) => enrollmentClassId(entry) === classItem._id.toString()
       );
       if (!alreadyInClass) {
         student.classes.push({ class: classItem._id, joinedAt: new Date(), status: 'active' });
-        await student.save();
       }
+      await student.save();
     }
 
-    // Add student to class if not already added
-    if (!classItem.students.includes(student._id)) {
+    const alreadyOnRoster = classItem.students.some(
+      (id) => id && id.toString() === student._id.toString()
+    );
+    if (!alreadyOnRoster) {
       classItem.students.push(student._id);
       classItem.studentCount = classItem.students.length;
       await classItem.save();
-      
-      // Emit real-time update via Socket.IO
+
       if (req.io) {
         const populatedClass = await Class.findById(req.params.id)
           .populate('students', 'name email avatar');
-        
+
         req.io.to(`teacher_${classItem.teacher}`).emit('student_added_to_class', {
           classId: req.params.id,
-          student: student,
+          student,
           class: populatedClass,
           timestamp: new Date()
         });
       }
     }
 
+    const enrollments = await getSyncedStudentEnrollments(student);
+
     res.status(200).json({
       success: true,
       data: student,
-      message: 'Student added to class successfully'
+      enrollments,
+      message:
+        'Student added to class successfully. They must sign in with this exact email on the student portal to see the class.'
     });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'A student with this email or ID already exists. Use the same email they use on the student portal.'
+      });
+    }
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -465,10 +505,13 @@ exports.joinClassByCode = async (req, res, next) => {
       });
     }
 
-    // Support both teacher portal (req.user) and student portal (req.body) authentication
-    const studentEmail = req.user?.email || req.body.email;
-    const studentName = req.user?.name || req.user?.fullName || req.body.name || 'Student';
-    
+    const studentEmail = normalizeStudentEmail(req.user?.email || req.body.email);
+    const studentName =
+      req.user?.name ||
+      req.user?.fullName ||
+      req.body.name ||
+      displayNameFromEmail(studentEmail);
+
     if (!studentEmail) {
       return res.status(400).json({
         success: false,
@@ -476,27 +519,27 @@ exports.joinClassByCode = async (req, res, next) => {
       });
     }
 
-    // Check if student is already in the class
     const existingStudent = await Student.findOne({ email: studentEmail });
-    
-    if (existingStudent && existingStudent.classes.some(
-      c => c.class && c.class.toString() === classItem._id.toString()
-    )) {
+
+    if (
+      existingStudent &&
+      existingStudent.classes.some(
+        (entry) => enrollmentClassId(entry) === classItem._id.toString()
+      )
+    ) {
       return res.status(400).json({
         success: false,
         message: 'You are already enrolled in this class'
       });
     }
 
-    // Find or create student
-    
     let studentRecord = await Student.findOne({ email: studentEmail });
-    
+
     if (!studentRecord) {
       studentRecord = await Student.create({
         name: studentName,
         email: studentEmail,
-        studentId: req.body.studentId || `STU${Date.now()}`,
+        studentId: (req.body.studentId && String(req.body.studentId).trim()) || `STU${Date.now()}`,
         classes: [{
           class: classItem._id,
           joinedAt: new Date(),
@@ -504,9 +547,8 @@ exports.joinClassByCode = async (req, res, next) => {
         }]
       });
     } else {
-      // Check if already enrolled
       const alreadyEnrolled = studentRecord.classes.some(
-        c => c.class && c.class.toString() === classItem._id.toString()
+        (entry) => enrollmentClassId(entry) === classItem._id.toString()
       );
       
       if (!alreadyEnrolled) {

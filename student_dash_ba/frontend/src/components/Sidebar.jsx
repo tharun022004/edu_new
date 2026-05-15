@@ -10,7 +10,6 @@ import {
   FolderIcon,
   XMarkIcon,
   AcademicCapIcon,
-  ArrowLeftIcon,
 } from '@heroicons/react/24/outline';
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -32,9 +31,6 @@ const Sidebar = ({ isOpen, onClose }) => {
   const displayName = user?.fullName || user?.name || user?.email || 'Student';
   const avatarUrl = user?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=4f46e5&color=fff&size=32`;
 
-  const handleBackClick = () => {
-    navigate(-1); // Go back to previous page
-  };
   const menuItems = [
     { icon: HomeIcon, label: 'Dashboard', path: '/' },
     { icon: BookOpenIcon, label: 'My Courses', path: '/courses' },
@@ -73,15 +69,6 @@ const Sidebar = ({ isOpen, onClose }) => {
         <div className="h-full flex flex-col">
           {/* Logo Section */}
           <div className="px-6 py-8">
-            {location.pathname !== '/' && (
-              <button
-                onClick={handleBackClick}
-                className="flex items-center space-x-2 text-gray-400 hover:text-indigo-600 mb-6 transition-colors group"
-              >
-                <ArrowLeftIcon className="h-5 w-5 transform group-hover:-translate-x-1 transition-transform" />
-                <span className="text-sm font-medium">Back</span>
-              </button>
-            )}
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-200">
                 <AcademicCapIcon className="w-6 h-6 text-white" />

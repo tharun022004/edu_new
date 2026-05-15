@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeftIcon, CheckCircleIcon, ClockIcon, DocumentTextIcon, StarIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, CheckCircleIcon, ClockIcon, DocumentTextIcon, StarIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
 import apiService from '../services/api';
 
 // Type config: label, emoji, color classes
@@ -23,6 +23,18 @@ const AssignmentDetail = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
   const [isQA, setIsQA] = useState(false);
+  const [isPdfAssignment, setIsPdfAssignment] = useState(false);
+  const [answerPdfFile, setAnswerPdfFile] = useState(null);
+
+  const TEACHER_BASE = import.meta.env.VITE_TEACHER_API_URL || 'http://localhost:5001';
+  const getAttachmentUrl = (path) => {
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
+    if (path.startsWith('/uploads')) return `${TEACHER_BASE}${path}`;
+    if (path.includes('uploads/submissions')) return `${TEACHER_BASE}/${path.replace(/^\//, '')}`;
+    if (path.includes('uploads/content')) return `${TEACHER_BASE}/${path.replace(/^\//, '')}`;
+    return `${TEACHER_BASE}/uploads/submissions/${path.split(/[/\\]/).pop()}`;
+  };
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -54,7 +66,9 @@ const AssignmentDetail = () => {
           const res = await apiService.getStudentAssignmentFromTeacher(student.email, assignmentId);
           if (res.success && res.data) {
             const data = res.data;
-            const qaType = data.assignmentType === 'qa' || (data.questions && data.questions.length > 0);
+            const pdfType = data.assignmentType === 'upload';
+            const qaType = !pdfType && (data.assignmentType === 'qa' || (data.questions && data.questions.length > 0));
+            setIsPdfAssignment(pdfType);
             setIsQA(qaType);
             setAssignment({
               ...data,
@@ -84,7 +98,9 @@ const AssignmentDetail = () => {
         const response = await apiService.getAssessment(assignmentId);
         if (response.success) {
           const data = response.data;
-          const qaType = data.assignmentType === 'qa' || (data.questions && data.questions.length > 0);
+          const pdfType = data.assignmentType === 'upload';
+          const qaType = !pdfType && (data.assignmentType === 'qa' || (data.questions && data.questions.length > 0));
+          setIsPdfAssignment(pdfType);
           setIsQA(qaType);
           setAssignment({
             ...data,
@@ -147,6 +163,72 @@ const AssignmentDetail = () => {
       }
     } catch (err) {
       showToast(err.message || 'Failed to submit', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSubmitPdf = async () => {
+    const student = getStudentInfo();
+    if (!student.email) {
+      showToast('Could not determine your student email. Please re-login.', 'error');
+      return;
+    }
+    if (!answerPdfFile && !submission?.attachments?.length) {
+      showToast('Please select your completed PDF to upload', 'error');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      let attachments = submission?.attachments || [];
+      if (answerPdfFile) {
+        const uploadRes = await apiService.uploadSubmissionPdf(answerPdfFile);
+        if (!uploadRes.success) throw new Error(uploadRes.message || 'Upload failed');
+        const f = uploadRes.data;
+        attachments = [{
+          filename: f.filename,
+          originalName: f.originalName,
+          mimetype: f.mimetype,
+          size: f.size,
+          path: f.path
+        }];
+      }
+      const res = await apiService.submitQAAssignment(assignmentId, {
+        studentEmail: student.email,
+        studentName: student.name,
+        attachments,
+        status: 'submitted'
+      });
+      if (res.success) {
+        showToast('PDF submitted successfully!');
+        setSubmission({ ...res.data, status: 'submitted', attachments });
+        setAnswerPdfFile(null);
+      } else {
+        showToast(res.message || 'Submission failed', 'error');
+      }
+    } catch (err) {
+      showToast(err.message || 'Failed to submit PDF', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUnsubmitPdf = async () => {
+    if (!window.confirm('Unsubmit so you can upload a new PDF?')) return;
+    const student = getStudentInfo();
+    setIsSubmitting(true);
+    try {
+      await apiService.submitQAAssignment(assignmentId, {
+        studentEmail: student.email,
+        studentName: student.name,
+        attachments: [],
+        status: 'draft'
+      });
+      setSubmission(prev => ({ ...prev, status: 'draft', attachments: [] }));
+      setAnswerPdfFile(null);
+      showToast('You can upload a new PDF.');
+    } catch (err) {
+      showToast(err.message || 'Failed to unsubmit', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -244,6 +326,11 @@ const AssignmentDetail = () => {
 
               {/* Status badges */}
               <div className="flex flex-wrap gap-2 mb-4">
+                {isPdfAssignment && (
+                  <span className="px-3 py-1 text-xs font-bold rounded-full border bg-amber-100 text-amber-800 border-amber-200">
+                    📎 PDF Assignment
+                  </span>
+                )}
                 {isQA && (
                   <span className={`px-3 py-1 text-xs font-bold rounded-full border ${getTypeConfig(assignment.type).badge}`}>
                     {getTypeConfig(assignment.type).emoji} {getTypeConfig(assignment.type).label}
@@ -329,8 +416,92 @@ const AssignmentDetail = () => {
               </div>
             )}
 
-            {/* Non-Q&A assignment fallback */}
-            {!isQA && (
+            {/* PDF assignment */}
+            {isPdfAssignment && (assignment.attachments?.length > 0) && (
+              <div className="bg-white rounded-2xl shadow-sm p-6 border border-amber-200">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <span className="text-lg">📎</span> Assignment PDF
+                </h3>
+                <p className="text-sm text-gray-600 mb-4">Download and complete the worksheet below, then submit as instructed by your teacher.</p>
+                <div className="space-y-3">
+                  {assignment.attachments.map((att, i) => (
+                    <a
+                      key={i}
+                      href={getAttachmentUrl(att.path)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-colors"
+                    >
+                      <DocumentTextIcon className="w-8 h-8 text-amber-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 truncate">{att.originalName || att.filename || 'Assignment PDF'}</p>
+                        <p className="text-xs text-amber-700">Open / download PDF</p>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+
+                {/* Submit completed PDF */}
+                <div className="mt-6 pt-6 border-t border-amber-200">
+                  <h4 className="font-semibold text-gray-900 mb-2">Submit your work</h4>
+                  <p className="text-sm text-gray-600 mb-4">Upload your completed assignment as a PDF file.</p>
+
+                  {isSubmitted && submission?.attachments?.length > 0 ? (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
+                        <CheckCircleIcon className="w-4 h-4" /> Submitted file
+                      </p>
+                      {submission.attachments.map((att, i) => (
+                        <a
+                          key={i}
+                          href={getAttachmentUrl(att.path)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl"
+                        >
+                          <DocumentTextIcon className="w-8 h-8 text-emerald-600" />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-gray-900 truncate">{att.originalName || att.filename}</p>
+                            <p className="text-xs text-emerald-700">Your submission</p>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center w-full min-h-[140px] border-2 border-dashed border-amber-300 rounded-xl cursor-pointer hover:bg-amber-50/50 transition-colors">
+                      <input
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        className="hidden"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (file && file.type !== 'application/pdf') {
+                            showToast('Please select a PDF file only', 'error');
+                            return;
+                          }
+                          setAnswerPdfFile(file || null);
+                        }}
+                      />
+                      {answerPdfFile ? (
+                        <>
+                          <DocumentTextIcon className="w-10 h-10 text-amber-600 mb-2" />
+                          <p className="font-semibold text-gray-900 text-sm">{answerPdfFile.name}</p>
+                          <p className="text-xs text-gray-500">{(answerPdfFile.size / 1024).toFixed(1)} KB · Click to change</p>
+                        </>
+                      ) : (
+                        <>
+                          <ArrowUpTrayIcon className="w-10 h-10 text-gray-400 mb-2" />
+                          <p className="font-medium text-gray-700 text-sm">Click to upload your answer PDF</p>
+                        </>
+                      )}
+                    </label>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Non-Q&A / non-PDF fallback */}
+            {!isQA && !isPdfAssignment && (
               <div className="bg-white rounded-2xl shadow-sm p-6">
                 <h3 className="font-semibold text-gray-900 mb-2">Submission</h3>
                 <p className="text-gray-600 text-sm">This assignment uses a different submission format. Check your course materials for details.</p>
@@ -411,6 +582,24 @@ const AssignmentDetail = () => {
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Answers'}
                   </button>
+                ) : isPdfAssignment ? (
+                  isSubmitted ? (
+                    <button
+                      onClick={handleUnsubmitPdf}
+                      disabled={isSubmitting}
+                      className="w-full px-4 py-2.5 text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 disabled:opacity-50 font-semibold text-sm"
+                    >
+                      {isSubmitting ? 'Processing...' : 'Unsubmit PDF'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleSubmitPdf}
+                      disabled={isSubmitting || (!answerPdfFile && !submission?.attachments?.length)}
+                      className="w-full px-4 py-2.5 bg-amber-600 text-white rounded-xl hover:bg-amber-700 disabled:opacity-50 font-semibold text-sm shadow-sm"
+                    >
+                      {isSubmitting ? 'Uploading...' : 'Submit PDF'}
+                    </button>
+                  )
                 ) : null}
               </div>
 
@@ -442,7 +631,7 @@ const AssignmentDetail = () => {
                 )}
                 <div className="flex justify-between">
                   <span className="text-gray-500">Type</span>
-                  <span className="font-medium text-gray-800">{isQA ? 'Q&A' : assignment.type || 'Assignment'}</span>
+                  <span className="font-medium text-gray-800">{isPdfAssignment ? 'PDF Upload' : isQA ? 'Q&A' : assignment.type || 'Assignment'}</span>
                 </div>
               </div>
             </div>

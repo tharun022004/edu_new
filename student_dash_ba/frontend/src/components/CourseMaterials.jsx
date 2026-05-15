@@ -39,6 +39,19 @@ const CourseMaterials = ({ course, onCountChange, navigateToResource }) => {
   const courseCategory = course?.category || course?.subject || '';
   const possibleSubjects = courseCategory ? mapCategoryToSubject(courseCategory.toLowerCase()) : [];
   const subjectKey = course?.subject || courseCategory || course?.name || '';
+  const activeClassId = (course?.classId || course?._id)?.toString();
+
+  const filterContentForClass = useCallback(
+    (items) => {
+      if (!activeClassId || !Array.isArray(items)) return items || [];
+      return items.filter((item) => {
+        const itemClassId = item.class?._id || item.class?.id || item.class;
+        if (!itemClassId) return false;
+        return itemClassId.toString() === activeClassId;
+      });
+    },
+    [activeClassId]
+  );
 
   // Convert Course modules to Content format (for display)
   // Now uses chapterId/subtopicId from Course modules for proper linking
@@ -127,16 +140,17 @@ const CourseMaterials = ({ course, onCountChange, navigateToResource }) => {
       console.log('📚 Fetching content for course:', {
         courseName: course?.name,
         courseId: course?._id,
+        classId: activeClassId,
         category: courseCategory,
         possibleSubjects,
         subjectKey,
         hasCourseModules: course?.modules?.length > 0
       });
 
-      // Fetch teacher-created content from Content API
-      // Don't filter by subject - let backend filter by enrolled classes only
-      // This ensures all content from enrolled classes is shown, regardless of subject name matching
       const params = { status: 'published' };
+      if (activeClassId) {
+        params.class = activeClassId;
+      }
 
       console.log('📡 Fetching teacher content with params:', params);
       const teacherResponse = await apiService.getContent(params);
@@ -150,7 +164,7 @@ const CourseMaterials = ({ course, onCountChange, navigateToResource }) => {
 
       let teacherContentData = [];
       if (teacherResponse.success) {
-        teacherContentData = teacherResponse.data || [];
+        teacherContentData = filterContentForClass(teacherResponse.data || []);
         
         const chapters = teacherContentData.filter(c => c.type === 'chapter');
         const subtopics = teacherContentData.filter(c => c.type === 'subtopic');
@@ -185,10 +199,7 @@ const CourseMaterials = ({ course, onCountChange, navigateToResource }) => {
           })));
         }
 
-        // Don't filter by subject on frontend - backend already filters by enrolled classes
-        // Subject matching can be too strict and filter out valid content
-        // The backend ensures students only see content from their enrolled classes
-        console.log('✅ Using all teacher content (filtered by enrolled classes on backend):', {
+        console.log('✅ Teacher content for this class:', {
           total: teacherContentData.length,
           chapters: teacherContentData.filter(c => c.type === 'chapter').length,
           subtopics: teacherContentData.filter(c => c.type === 'subtopic').length
@@ -236,7 +247,7 @@ const CourseMaterials = ({ course, onCountChange, navigateToResource }) => {
       }
       console.log('🏁 Fetch completed, loading set to false');
     }
-  }, [course, courseCategory, possibleSubjects, subjectKey, convertCourseModulesToContent, onCountChange]); // Include onCountChange but it should be stable
+  }, [course, activeClassId, courseCategory, possibleSubjects, subjectKey, convertCourseModulesToContent, filterContentForClass, onCountChange]);
 
   useEffect(() => {
     // Only fetch when course ID actually changes, not on every render

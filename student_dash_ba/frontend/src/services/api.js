@@ -542,8 +542,22 @@ class ApiService {
     return response.json();
   }
 
+  async uploadSubmissionPdf(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${this.teacherBaseURL}/assignments/student/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || 'Failed to upload PDF');
+    }
+    return response.json();
+  }
+
   async submitQAAssignment(assignmentId, data) {
-    // data: { studentEmail, studentName, answers: [{ questionIndex, answer }] }
+    // data: { studentEmail, studentName, answers?, attachments?, status? }
     const response = await fetch(`${this.teacherBaseURL}/assignments/student/submit/${assignmentId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -568,6 +582,13 @@ class ApiService {
     }
     return response.json();
   }
+  async getRecentActivity() {
+    const response = await fetch(`${this.baseURL}/dashboard/activity`, {
+      headers: this.getAuthHeaders(),
+    });
+    return this.handleResponse(response);
+  }
+
   // --- Dashboard Schedule, Attendance, & Goals ---
   async getSchedule() {
     const response = await fetch(`${this.baseURL}/schedule`, {

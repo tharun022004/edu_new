@@ -1,3 +1,8 @@
+const {
+  fetchStudentEnrollments,
+  extractEnrolledClassIds
+} = require('../utils/teacherEnrollment');
+
 // @desc    Get content for student's enrolled classes
 // @route   GET /api/content
 // @access  Private
@@ -20,108 +25,28 @@ exports.getContent = async (req, res, next) => {
     const teacherApiUrl = process.env.TEACHER_API_URL || 'http://localhost:5001';
     
     try {
-      // First, get student's classes - try with ID first, then email
-      let enrolledClasses = [];
-      
-      // Try with student ID
-      try {
-        const classesResponse = await fetch(
-          `${teacherApiUrl}/api/classes/student/${studentId}`,
-          {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          }
-        );
+      const enrolledClasses = await fetchStudentEnrollments({
+        email: studentEmail,
+        id: studentId
+      });
+      console.log('Found enrolled classes:', enrolledClasses.length);
 
-        if (classesResponse.ok) {
-          const classesData = await classesResponse.json();
-          enrolledClasses = classesData.data || (classesData.success ? (classesData.data || []) : []);
-          console.log('✅ Found enrolled classes by ID:', enrolledClasses.length);
-        }
-      } catch (idError) {
-        console.warn('⚠️ Could not fetch classes by ID, trying with email');
+      const enrolledClassIds = extractEnrolledClassIds(enrolledClasses);
+
+      if (classId && enrolledClassIds.length > 0 && !enrolledClassIds.includes(classId.toString())) {
+        return res.status(403).json({
+          success: false,
+          message: 'You are not enrolled in this class'
+        });
       }
 
-      // If no classes found, try with email
-      if (enrolledClasses.length === 0) {
-        try {
-          const emailResponse = await fetch(
-            `${teacherApiUrl}/api/classes/student/${encodeURIComponent(studentEmail)}`,
-            {
-              method: 'GET',
-              headers: {
-                'Content-Type': 'application/json'
-              }
-            }
-          );
-          
-          if (emailResponse.ok) {
-            const emailData = await emailResponse.json();
-            enrolledClasses = emailData.data || (emailData.success ? (emailData.data || []) : []);
-            console.log('✅ Found enrolled classes by email:', enrolledClasses.length);
-          }
-        } catch (emailError) {
-          console.warn('⚠️ Could not fetch classes by email either');
-        }
-      }
-
-      // Build query for teacher backend
       const queryParams = new URLSearchParams();
-      
-      // Priority 1: If specific class ID provided, use it
+
       if (classId) {
         queryParams.append('class', classId);
-      } 
-      // Priority 2: Use all enrolled classes (this is the main source of content)
-      else if (enrolledClasses.length > 0) {
-        // Add all enrolled class IDs
-        const classIds = enrolledClasses.map(cls => {
-          // Handle different class object structures
-          // enrolledClasses structure: [{ class: { _id: ..., name: ... }, joinedAt: ..., status: ... }]
-          if (typeof cls === 'object') {
-            // First try to get class ID from nested class object (most common structure)
-            if (cls.class) {
-              // cls.class might be an ObjectId or a populated object
-              if (typeof cls.class === 'object' && cls.class._id) {
-                return cls.class._id.toString();
-              } else if (typeof cls.class === 'object' && cls.class.id) {
-                return cls.class.id.toString();
-              } else if (typeof cls.class === 'string' || cls.class.toString) {
-                return cls.class.toString();
-              }
-            }
-            // Fallback to direct properties
-            if (cls._id) return cls._id.toString();
-            if (cls.id) return cls.id.toString();
-          }
-          // If it's already a string/ObjectId, convert to string
-          return cls ? cls.toString() : null;
-        }).filter(Boolean);
-        
-        console.log('📚 Using enrolled class IDs:', classIds);
-        console.log('📚 Enrolled classes structure:', enrolledClasses.map(cls => ({
-          hasClass: !!cls.class,
-          classId: cls.class?._id || cls.class?.id || cls.class,
-          directId: cls._id || cls.id,
-          classType: typeof cls.class
-        })));
-        
-        if (classIds.length === 0) {
-          console.warn('⚠️ No valid class IDs extracted from enrolled classes');
-        } else {
-          classIds.forEach(id => {
-            if (id) queryParams.append('class', id.toString());
-          });
-        }
-      }
-      
-      // Priority 3: If no classes but subject provided, try with subject only
-      // This allows fetching content even if student hasn't joined classes yet
-      // But prioritize class IDs - if we have enrolled classes, don't use subject filter
-      if (enrolledClasses.length === 0 && !classId && subject) {
-        console.log('⚠️ No enrolled classes, using subject filter:', subject);
+      } else if (enrolledClassIds.length > 0) {
+        enrolledClassIds.forEach((id) => queryParams.append('class', id));
+      } else if (subject) {
         queryParams.append('subject', subject);
       }
       
@@ -179,33 +104,19 @@ exports.getContent = async (req, res, next) => {
       const contentData = await contentResponse.json();
       let content = contentData.data || (contentData.success ? (contentData.data || []) : []);
 
-      // Filter content to only include classes the student is enrolled in (if we have enrolled classes)
-      if (enrolledClasses.length > 0) {
-        const classIds = enrolledClasses.map(cls => {
-          // Extract class ID from enrolled class structure
-          if (cls.class) {
-            return (cls.class._id || cls.class.id || cls.class).toString();
-          }
-          return (cls._id || cls.id || cls).toString();
-        });
-        
-        console.log('🔍 Filtering content by class IDs:', classIds);
-        
-        content = content.filter(item => {
+      const allowedClassIds = classId
+        ? [classId.toString()]
+        : extractEnrolledClassIds(enrolledClasses);
+
+      if (allowedClassIds.length > 0) {
+        console.log('🔍 Filtering content by class IDs:', allowedClassIds);
+
+        content = content.filter((item) => {
           const itemClassId = item.class?._id || item.class?.id || item.class;
           if (!itemClassId) {
-            // If content has no class, include it (might be general content)
-            return true;
+            return false;
           }
-          const matches = classIds.some(id => id === itemClassId.toString());
-          if (!matches) {
-            console.log('❌ Filtered out content:', {
-              title: item.title,
-              itemClassId: itemClassId.toString(),
-              enrolledClassIds: classIds
-            });
-          }
-          return matches;
+          return allowedClassIds.includes(itemClassId.toString());
         });
         
         console.log('✅ After filtering:', {
@@ -304,30 +215,22 @@ exports.getContentItem = async (req, res, next) => {
     const contentData = await contentResponse.json();
     const content = contentData.data || contentData.success ? (contentData.data || null) : null;
 
-    // Verify student is enrolled in the class
-    const studentId = req.user._id;
-    const classesResponse = await fetch(
-      `${teacherApiUrl}/api/classes/student/${studentId}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+    const enrolledClasses = await fetchStudentEnrollments({
+      email: req.user.email,
+      id: req.user._id
+    });
+    const classIds = extractEnrolledClassIds(enrolledClasses);
+    const contentClassId = content?.class?._id || content?.class?.id || content?.class;
 
-    if (classesResponse.ok) {
-      const classesData = await classesResponse.json();
-      const enrolledClasses = classesData.data || [];
-      const classIds = enrolledClasses.map(cls => cls._id || cls.id);
-      const contentClassId = content?.class?._id || content?.class?.id || content?.class;
-
-      if (!classIds.some(id => id.toString() === contentClassId?.toString())) {
-        return res.status(403).json({
-          success: false,
-          message: 'You are not enrolled in this class'
-        });
-      }
+    if (
+      contentClassId &&
+      classIds.length > 0 &&
+      !classIds.includes(contentClassId.toString())
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not enrolled in this class'
+      });
     }
 
     res.status(200).json({

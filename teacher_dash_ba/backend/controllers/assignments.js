@@ -1,5 +1,32 @@
 const Assignment = require('../models/Assignment');
 const Class = require('../models/Class');
+const path = require('path');
+const fs = require('fs');
+
+const submissionUploadDir = path.join(process.cwd(), 'uploads', 'submissions');
+if (!fs.existsSync(submissionUploadDir)) {
+  fs.mkdirSync(submissionUploadDir, { recursive: true });
+}
+
+// @desc    Upload student submission PDF (public student route)
+// @route   POST /api/assignments/student/upload
+exports.uploadSubmissionFile = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Please upload a PDF file' });
+    }
+    const fileData = {
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      path: `/uploads/submissions/${req.file.filename}`
+    };
+    res.status(200).json({ success: true, data: fileData, message: 'File uploaded successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error during file upload', error: error.message });
+  }
+};
 
 // @desc    Get all assignments
 // @route   GET /api/assignments

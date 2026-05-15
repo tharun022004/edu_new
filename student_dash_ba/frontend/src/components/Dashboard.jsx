@@ -26,6 +26,7 @@ import {
   Bars3Icon,
   ChevronRightIcon,
   ArrowDownTrayIcon,
+  ArrowUpTrayIcon,
 } from '@heroicons/react/24/outline';
 import { 
   FireIcon as FireIconSolid,
@@ -34,6 +35,7 @@ import {
 } from '@heroicons/react/24/solid';
 import toast from 'react-hot-toast';
 import apiService from '../services/api';
+import { downloadAttendancePdf } from '../utils/attendanceReportPdf';
 
 // Register Chart.js components
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Title);
@@ -45,13 +47,22 @@ const Dashboard = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showNewGoalModal, setShowNewGoalModal] = useState(false);
+  const [showActivityModal, setShowActivityModal] = useState(false);
   const [newGoal, setNewGoal] = useState({ title: '', description: '', target: '' });
 
   // State for API data
   const [dashboardData, setDashboardData] = useState(null);
   const [userData, setUserData] = useState(null);
+  const [recentActivity, setRecentActivity] = useState([]);
   const [schedule, setSchedule] = useState([]);
   const [attendance, setAttendance] = useState([]);
+  const [attendanceSummary, setAttendanceSummary] = useState({
+    total: 0,
+    present: 0,
+    late: 0,
+    absent: 0,
+    rate: 100
+  });
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -64,18 +75,30 @@ const Dashboard = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const [dashboardResponse, userResponse, scheduleRes, attendanceRes, goalsRes] = await Promise.all([
+      const [dashboardResponse, userResponse, activityRes, scheduleRes, attendanceRes, goalsRes] = await Promise.all([
         apiService.getDashboard(),
         apiService.getCurrentUser(),
+        apiService.getRecentActivity().catch(() => ({ data: [] })),
         apiService.getSchedule().catch(() => ({ data: [] })),
-        apiService.getAttendance().catch(() => ({ data: [] })),
+        apiService.getAttendance().catch(() => ({
+          data: [],
+          summary: { total: 0, present: 0, late: 0, absent: 0, rate: 100 }
+        })),
         apiService.getGoals().catch(() => ({ data: [] }))
       ]);
 
       setDashboardData(dashboardResponse.data);
       setUserData(userResponse.data.user || userResponse.data);
+      setRecentActivity(activityRes.data || []);
       setSchedule(scheduleRes.data || []);
       setAttendance(attendanceRes.data || []);
+      setAttendanceSummary(attendanceRes.summary || {
+        total: 0,
+        present: 0,
+        late: 0,
+        absent: 0,
+        rate: 100
+      });
       setGoals(goalsRes.data || []);
     } catch (err) {
       setError(err.message);
@@ -181,45 +204,65 @@ const Dashboard = () => {
   const getScheduleForSlot = (day, slot) => {
     return schedule.find(s => s.dayOfWeek === day && s.startTime >= slot.start && s.startTime <= slot.end);
   };
-  
-  // Compute Attendance Stats
-  const totalClasses = attendance.length;
-  const presentClasses = attendance.filter(a => a.status === 'present').length;
-  const lateClasses = attendance.filter(a => a.status === 'late').length;
-  const absentClasses = attendance.filter(a => a.status === 'absent').length;
-  const attendanceRate = totalClasses === 0 ? 100 : Math.round(((presentClasses + lateClasses) / totalClasses) * 100);
 
-  const handleDownloadAttendanceReport = () => {
+  const ACTIVITY_STYLES = {
+    doubt: { icon: QuestionMarkCircleIcon, iconBg: 'bg-violet-100', iconColor: 'text-violet-600', border: 'border-violet-100' },
+    assignment: { icon: ClipboardDocumentListIcon, iconBg: 'bg-blue-100', iconColor: 'text-blue-600', border: 'border-blue-100' },
+    content: { icon: ArrowUpTrayIcon, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', border: 'border-emerald-100' },
+  };
+  const getActivityStyle = (type) =>
+    ACTIVITY_STYLES[type] || {
+      icon: ChartBarIcon,
+      iconBg: 'bg-gray-100',
+      iconColor: 'text-gray-600',
+      border: 'border-gray-100',
+    };
+
+  const recentActivityPreview = recentActivity.slice(0, 3);
+  
+  const {
+    total: totalClasses,
+    present: presentClasses,
+    late: lateClasses,
+    absent: absentClasses,
+    rate: attendanceRate
+  } = attendanceSummary;
+
+  const recentAttendance = [...attendance]
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 5);
+
+  const attendanceStatusStyle = (status) => {
+    switch (status) {
+      case 'present':
+        return 'bg-emerald-50 text-emerald-700 border-emerald-100';
+      case 'late':
+        return 'bg-amber-50 text-amber-700 border-amber-100';
+      case 'absent':
+        return 'bg-red-50 text-red-700 border-red-100';
+      default:
+        return 'bg-gray-50 text-gray-600 border-gray-100';
+    }
+  };
+
+  const handleDownloadAttendanceReport = async () => {
     if (attendance.length === 0) {
       toast.error('No attendance records available to download.');
       return;
     }
 
-    // Generate CSV content
-    const headers = ['Date', 'Class/Subject', 'Status'];
-    const rows = attendance.map(record => [
-      new Date(record.date).toLocaleDateString(),
-      record.class?.subject || 'Class Session',
-      record.status.toUpperCase()
-    ]);
-    
-    // Create CSV string
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(r => r.join(','))
-    ].join('\n');
-
-    // Create a Blob and trigger download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Attendance_Report_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    toast.success('Attendance report downloaded successfully!');
+    try {
+      await downloadAttendancePdf({
+        studentName: userData?.fullName || userData?.name || 'Student',
+        studentEmail: userData?.email,
+        records: attendance,
+        summary: attendanceSummary
+      });
+      toast.success('Attendance PDF downloaded successfully!');
+    } catch (err) {
+      console.error('PDF download error:', err);
+      toast.error('Failed to generate PDF report.');
+    }
   };
 
   // Chart configurations
@@ -353,110 +396,232 @@ const Dashboard = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 mb-8 lg:mb-12">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 mb-10 items-start">
           {/* Quick Access Cards */}
-          <div className="lg:col-span-1">
-            <div className="flex items-center justify-between mb-6 lg:mb-8">
-              <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Quick Actions</h2>
-            </div>
-            <div className="grid grid-cols-2 gap-3 lg:gap-4">
-              {[
-                { icon: BookOpenIcon, label: 'My Courses', path: '/courses', color: 'bg-gradient-to-r from-blue-500 to-blue-600', hoverColor: 'hover:from-blue-600 hover:to-blue-700' },
-                { icon: ClipboardDocumentListIcon, label: 'Assessments', path: '/assessments', color: 'bg-gradient-to-r from-emerald-500 to-emerald-600', hoverColor: 'hover:from-emerald-600 hover:to-emerald-700' },
-                { icon: ChartBarIcon, label: 'Progress', path: '/progress', color: 'bg-gradient-to-r from-purple-500 to-purple-600', hoverColor: 'hover:from-purple-600 hover:to-purple-700' },
-                { icon: UserCircleIcon, label: 'Profile', path: '/profile', color: 'bg-gradient-to-r from-orange-500 to-orange-600', hoverColor: 'hover:from-orange-600 hover:to-orange-700' },
-              ].map((item, index) => (
-                <button
-                  key={index}
-                  onClick={() => navigate(item.path)}
-                  className={`group ${item.color} ${item.hoverColor} text-white p-4 rounded-xl transition-all duration-200 hover:scale-105 hover:shadow-lg text-left`}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <item.icon className="h-6 w-6" />
-                    <ChevronRightIcon className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                  </div>
-                  <div className="font-semibold text-sm lg:text-base">{item.label}</div>
-                </button>
-              ))}
-            </div>
-          </div>
+<div className="lg:col-span-1 min-w-0">
+  <div className="mb-4">
+    <h2 className="text-lg font-bold text-gray-900">Quick Actions</h2>
+  </div>
+
+  <div className="grid grid-cols-2 gap-3 lg:gap-4">
+    {[
+      {
+        icon: BookOpenIcon,
+        label: 'My Courses',
+        path: '/courses',
+        color: 'bg-gradient-to-r from-blue-500 to-blue-600',
+        hoverColor: 'hover:from-blue-600 hover:to-blue-700',
+      },
+      {
+        icon: ClipboardDocumentListIcon,
+        label: 'Assessments',
+        path: '/assignments',
+        color: 'bg-gradient-to-r from-emerald-500 to-emerald-600',
+        hoverColor: 'hover:from-emerald-600 hover:to-emerald-700',
+      },
+      {
+        icon: ChartBarIcon,
+        label: 'Progress',
+        path: '/progress',
+        color: 'bg-gradient-to-r from-purple-500 to-purple-600',
+        hoverColor: 'hover:from-purple-600 hover:to-purple-700',
+      },
+      {
+        icon: UserCircleIcon,
+        label: 'Profile',
+        path: '/profile',
+        color: 'bg-gradient-to-r from-orange-500 to-orange-600',
+        hoverColor: 'hover:from-orange-600 hover:to-orange-700',
+      },
+    ].map((item, index) => (
+      <button
+        key={index}
+        onClick={() => navigate(item.path)}
+        className={`group ${item.color} ${item.hoverColor} text-white p-4 rounded-xl transition-all duration-200 hover:scale-105 hover:shadow-lg text-left`}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <item.icon className="h-6 w-6" />
+          <ChevronRightIcon className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+        </div>
+        <div className="font-semibold text-sm lg:text-base">
+          {item.label}
+        </div>
+      </button>
+    ))}
+  </div>
+</div>
 
           {/* Attendance Overview */}
-          <div className="lg:col-span-1">
-            <div className="flex items-center justify-between mb-6 lg:mb-8">
-              <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Attendance</h2>
-              <span className="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded-full">{attendanceRate}% Rate</span>
-            </div>
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex flex-col items-center justify-center h-full min-h-[200px]">
-              <div className="flex justify-between w-full mb-6 text-center">
-                <div>
-                  <p className="text-3xl font-bold text-green-500">{presentClasses}</p>
-                  <p className="text-sm text-gray-500">Present</p>
+          <div className="lg:col-span-1 min-w-0">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 lg:p-6 flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <CalendarDaysIcon className="w-5 h-5 text-indigo-600" />
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">Attendance</h3>
+                    <p className="text-xs text-gray-500">Your class session record</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-3xl font-bold text-yellow-500">{lateClasses}</p>
-                  <p className="text-sm text-gray-500">Late</p>
+                <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">
+                  {attendanceRate}% rate
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-center">
+                  <p className="text-2xl font-bold text-emerald-600">{presentClasses}</p>
+                  <p className="text-[11px] font-medium text-emerald-700 mt-0.5">Present</p>
                 </div>
-                <div>
-                  <p className="text-3xl font-bold text-red-500">{absentClasses}</p>
-                  <p className="text-sm text-gray-500">Absent</p>
+                <div className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-center">
+                  <p className="text-2xl font-bold text-amber-600">{lateClasses}</p>
+                  <p className="text-[11px] font-medium text-amber-700 mt-0.5">Late</p>
+                </div>
+                <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-center">
+                  <p className="text-2xl font-bold text-red-600">{absentClasses}</p>
+                  <p className="text-[11px] font-medium text-red-700 mt-0.5">Absent</p>
                 </div>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-3 mb-2">
-                <div className="bg-green-500 h-3 rounded-full transition-all duration-300" style={{ width: `${attendanceRate}%` }}></div>
+
+              <div className="mb-4">
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>{totalClasses} sessions</span>
+                  <span>{attendanceRate}% attended</span>
+                </div>
+                <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden flex">
+                  {totalClasses > 0 ? (
+                    <>
+                      <div
+                        className="bg-emerald-500 h-full"
+                        style={{ width: `${(presentClasses / totalClasses) * 100}%` }}
+                      />
+                      <div
+                        className="bg-amber-400 h-full"
+                        style={{ width: `${(lateClasses / totalClasses) * 100}%` }}
+                      />
+                      <div
+                        className="bg-red-500 h-full"
+                        style={{ width: `${(absentClasses / totalClasses) * 100}%` }}
+                      />
+                    </>
+                  ) : (
+                    <div className="bg-gray-200 h-full w-full" />
+                  )}
+                </div>
               </div>
-              <p className="text-xs text-gray-500 mt-2 text-center">Keep up the good attendance!</p>
-              <button 
+
+              <div className="flex-1 min-h-0 mb-4">
+                <p className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Recent sessions</p>
+                {recentAttendance.length > 0 ? (
+                  <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
+                    {recentAttendance.map((record) => (
+                      <div
+                        key={record._id || `${record.date}-${record.class?._id}`}
+                        className="flex items-center justify-between gap-2 text-xs border border-gray-100 rounded-lg px-2.5 py-2 bg-gray-50/80"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-900 truncate">
+                            {record.class?.name || 'Class'}
+                          </p>
+                          <p className="text-gray-500">
+                            {new Date(record.date).toLocaleDateString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric'
+                            })}
+                          </p>
+                        </div>
+                        <span
+                          className={`shrink-0 px-2 py-0.5 rounded-full border text-[10px] font-semibold uppercase ${attendanceStatusStyle(record.status)}`}
+                        >
+                          {record.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500 py-4 text-center bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                    No attendance marked yet for your classes.
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="button"
                 onClick={handleDownloadAttendanceReport}
-                className="mt-6 flex items-center justify-center space-x-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-xl transition-colors w-full"
+                className="flex items-center justify-center gap-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2.5 rounded-xl transition-colors w-full"
               >
                 <ArrowDownTrayIcon className="w-4 h-4" />
-                <span>Download Report</span>
+                <span>Download PDF Report</span>
               </button>
             </div>
           </div>
 
           {/* Recent Activity */}
-          <div className="lg:col-span-1">
-            <div className="flex items-center justify-between mb-6 lg:mb-8">
-              <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Recent Activity</h2>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 lg:p-6 h-full flex flex-col">
-              <div className="space-y-4 flex-1">
-                {(dashboardData?.recentActivities?.slice(0, 5) || []).length > 0 ? (
-                  dashboardData.recentActivities.slice(0, 5).map((activity) => (
-                    <div key={activity.id} className="flex items-start space-x-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
-                      <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
-                        <PlayCircleIcon className="w-5 h-5" />
+          <div className="lg:col-span-1 min-w-0">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 lg:p-6 flex flex-col">
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Recent Activity</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Latest updates from your classes</p>
+                </div>
+                <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">Last 3</span>
+              </div>
+              <div className="space-y-3 flex-1">
+                {recentActivityPreview.length > 0 ? (
+                  recentActivityPreview.map((activity) => {
+                    const style = getActivityStyle(activity.type);
+                    const Icon = style.icon;
+                    return (
+                      <div
+                        key={activity.id}
+                        className={`flex items-start gap-4 p-4 rounded-xl border ${style.border} bg-gradient-to-r from-white to-gray-50/80`}
+                      >
+                        <div className={`p-2.5 rounded-xl ${style.iconBg} flex-shrink-0`}>
+                          <Icon className={`w-4 h-4 ${style.iconColor}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-800 leading-snug">
+                            <span className="font-semibold text-gray-900">{activity.student}</span>
+                            <span className="text-gray-600"> {activity.action}</span>
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 mt-2">
+                            <span className="text-[11px] font-medium text-gray-500">{activity.time}</span>
+                            {activity.class && (
+                              <span className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                                {activity.class}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{activity.courseTitle}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">Accessed {new Date(activity.lastAccessed).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="text-center text-gray-500 py-8">
-                    <p>No recent activity.</p>
+                    <p>No recent activity yet.</p>
+                    <p className="text-xs mt-1">Join a class, ask doubts, or submit assignments to see updates here.</p>
                   </div>
                 )}
               </div>
-              <div className="mt-4 pt-4 border-t border-gray-100 text-center">
-                <button 
-                  onClick={() => navigate('/progress')}
-                  className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center justify-center mx-auto space-x-1 hover:bg-indigo-50 px-4 py-2 rounded-xl transition-colors w-full"
-                >
-                  <span>View All Activity</span>
-                  <ArrowRightIcon className="w-4 h-4" />
-                </button>
-              </div>
+              {recentActivity.length > 3 && (
+                <div className="mt-5 pt-4 border-t border-gray-100 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowActivityModal(true)}
+                    className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center justify-center mx-auto space-x-1 hover:bg-indigo-50 px-4 py-2 rounded-xl transition-colors w-full"
+                  >
+                    <span>View All Activity</span>
+                    <ArrowRightIcon className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
-        </div>
+          </div> 
 
         {/* Weekly Timetable Grid Section */}
-        <div className="mb-8 lg:mb-12">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 lg:p-6 overflow-x-auto h-full">
+        <div className="mb-8 lg:mb-12 mt-4 clear-both">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 lg:p-6 overflow-x-auto">
             <div className="flex items-center justify-between mb-6 min-w-[800px]">
               <h3 className="text-xl lg:text-2xl font-bold text-gray-900">Weekly Timetable</h3>
             </div>
@@ -710,6 +875,48 @@ const Dashboard = () => {
           </div>
         </div>
       )}
+      {showActivityModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-gray-900">All Recent Activity</h3>
+              <button
+                type="button"
+                onClick={() => setShowActivityModal(false)}
+                className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-all duration-200"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              {recentActivity.map((activity) => {
+                const style = getActivityStyle(activity.type);
+                const Icon = style.icon;
+                return (
+                  <div key={activity.id} className={`flex items-start gap-4 p-4 rounded-xl border ${style.border} bg-gray-50`}>
+                    <div className={`p-2.5 rounded-xl ${style.iconBg}`}>
+                      <Icon className={`w-5 h-5 ${style.iconColor}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-800">
+                        <span className="font-semibold text-gray-900">{activity.student}</span>
+                        <span className="text-gray-600"> {activity.action}</span>
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-500">{activity.time}</span>
+                        {activity.class && (
+                          <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{activity.class}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       </div>
     </div>
   );

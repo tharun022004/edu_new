@@ -1,5 +1,54 @@
+const mongoose = require('mongoose');
 const Schedule = require('../models/Schedule');
 const Class = require('../models/Class');
+
+// @desc    Get schedule for student's enrolled classes (by class id query params)
+// @route   GET /api/schedule/student
+// @access  Public (called by student backend)
+exports.getScheduleForStudentClasses = async (req, res, next) => {
+  try {
+    const classQuery = req.query.class;
+    let classIds = [];
+
+    if (Array.isArray(classQuery)) {
+      classIds = classQuery.filter(Boolean);
+    } else if (classQuery) {
+      classIds =
+        typeof classQuery === 'string' && classQuery.includes(',')
+          ? classQuery.split(',').filter(Boolean)
+          : [classQuery];
+    }
+
+    const validClassIds = classIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+    if (validClassIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: [],
+        message: 'No valid class IDs provided'
+      });
+    }
+
+    const query =
+      validClassIds.length === 1
+        ? { class: validClassIds[0] }
+        : { class: { $in: validClassIds } };
+
+    const schedule = await Schedule.find(query)
+      .populate('class', 'name subject grade')
+      .populate('teacher', 'name fullName email')
+      .sort({ dayOfWeek: 1, startTime: 1 });
+
+    res.status(200).json({
+      success: true,
+      count: schedule.length,
+      data: schedule
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
 
 // @desc    Get teacher's schedule
 // @route   GET /api/schedule

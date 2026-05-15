@@ -157,7 +157,7 @@ const ClassDetail = () => {
     setAddingStudent(true);
     try {
       const payload = {
-        email: newStudent.email.trim(),
+        email: newStudent.email.trim().toLowerCase(),
         name: newStudent.name.trim() || undefined,
         studentId: newStudent.studentId.trim() || undefined,
       };
@@ -428,7 +428,7 @@ const ClassDetail = () => {
                   value={newStudent.email}
                   onChange={(e) => setNewStudent({ ...newStudent, email: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="Enter student email"
+                  placeholder="Student portal login email"
                   required
                 />
               </div>

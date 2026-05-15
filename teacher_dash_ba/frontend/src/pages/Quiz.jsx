@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trophy, Clock, BookOpen, Users, Trash2, ToggleLeft, ToggleRight, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Plus, Trophy, Clock, BookOpen, Users, Trash2, ToggleLeft, ToggleRight, ArrowLeft, RefreshCw, PlusCircle, Code, LayoutList, CheckCircle2 } from 'lucide-react';
 
 const TEACHER_BASE = 'http://localhost:5001/api';
 
@@ -20,6 +20,16 @@ const JSON_TEMPLATE = `[
   }
 ]`;
 
+const EMPTY_QUESTION = () => ({
+  text: '',
+  options: ['', '', '', ''],
+  correctAnswer: 0,
+  explanation: '',
+  points: 1
+});
+
+const OPTION_LABELS = ['A', 'B', 'C', 'D'];
+
 const TeacherQuiz = () => {
   const [view, setView] = useState('list'); // 'list' | 'create' | 'results'
   const [quizzes, setQuizzes] = useState([]);
@@ -36,6 +46,8 @@ const TeacherQuiz = () => {
   const [form, setForm] = useState({
     title: '', classId: '', description: '', timeLimitMinutes: 30, questionsToShow: 0, isPublished: false
   });
+  const [questionInputMode, setQuestionInputMode] = useState('builder'); // 'builder' | 'json'
+  const [builderQuestions, setBuilderQuestions] = useState([EMPTY_QUESTION()]);
   const [jsonInput, setJsonInput] = useState(JSON_TEMPLATE);
   const [jsonError, setJsonError] = useState('');
   const [parsedQuestions, setParsedQuestions] = useState([]);
@@ -70,6 +82,103 @@ const TeacherQuiz = () => {
 
   useEffect(() => { fetchQuizzes(); fetchClasses(); }, []);
 
+  const normalizeQuestions = (parsed) => parsed.map(q => ({
+    text: q.text.trim(),
+    options: q.options.map(o => o.trim()).filter(Boolean),
+    correctAnswer: q.correctAnswer,
+    explanation: q.explanation?.trim() || '',
+    points: Number(q.points) || 1
+  }));
+
+  const validateBuilder = (questions) => {
+    setJsonError('');
+    const normalized = [];
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      if (!q.text?.trim()) { setJsonError(`Question ${i + 1}: enter the question text`); return; }
+      const opts = (q.options || []).map(o => o.trim()).filter(Boolean);
+      if (opts.length < 2) { setJsonError(`Question ${i + 1}: add at least 2 options`); return; }
+      if (q.correctAnswer === undefined || q.correctAnswer < 0 || q.correctAnswer >= opts.length) {
+        setJsonError(`Question ${i + 1}: select the correct answer`); return;
+      }
+      normalized.push({
+        text: q.text.trim(),
+        options: opts,
+        correctAnswer: q.correctAnswer,
+        explanation: q.explanation?.trim() || '',
+        points: Number(q.points) || 1
+      });
+    }
+    if (normalized.length === 0) { setJsonError('Add at least 1 question'); return; }
+    setParsedQuestions(normalized);
+    return normalized;
+  };
+
+  const addBuilderQuestion = () => setBuilderQuestions(prev => [...prev, EMPTY_QUESTION()]);
+  const removeBuilderQuestion = (idx) => setBuilderQuestions(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx));
+  const updateBuilderQuestion = (idx, field, value) => {
+    setBuilderQuestions(prev => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], [field]: value };
+      return next;
+    });
+    setJsonError('');
+  };
+  const updateBuilderOption = (qIdx, optIdx, value) => {
+    setBuilderQuestions(prev => {
+      const next = [...prev];
+      const opts = [...next[qIdx].options];
+      opts[optIdx] = value;
+      next[qIdx] = { ...next[qIdx], options: opts };
+      return next;
+    });
+    setJsonError('');
+  };
+  const addBuilderOption = (qIdx) => {
+    setBuilderQuestions(prev => {
+      const next = [...prev];
+      const opts = [...next[qIdx].options];
+      if (opts.length >= 4) return prev;
+      next[qIdx] = { ...next[qIdx], options: [...opts, ''] };
+      return next;
+    });
+  };
+  const removeBuilderOption = (qIdx, optIdx) => {
+    setBuilderQuestions(prev => {
+      const next = [...prev];
+      const opts = next[qIdx].options.filter((_, i) => i !== optIdx);
+      if (opts.length < 2) return prev;
+      let correct = next[qIdx].correctAnswer;
+      if (correct === optIdx) correct = 0;
+      else if (correct > optIdx) correct -= 1;
+      next[qIdx] = { ...next[qIdx], options: opts, correctAnswer: Math.min(correct, opts.length - 1) };
+      return next;
+    });
+  };
+
+  const switchToJsonMode = () => {
+    const validated = validateBuilder(builderQuestions);
+    if (validated) setJsonInput(JSON.stringify(validated, null, 2));
+    setQuestionInputMode('json');
+  };
+
+  const switchToBuilderMode = () => {
+    const parsed = validateJson(jsonInput);
+    if (parsed) setBuilderQuestions(parsed.map(q => ({
+      text: q.text,
+      options: [...q.options, '', '', ''].slice(0, 4),
+      correctAnswer: q.correctAnswer,
+      explanation: q.explanation || '',
+      points: q.points || 1
+    })));
+    else if (builderQuestions.length === 0) setBuilderQuestions([EMPTY_QUESTION()]);
+    setQuestionInputMode('builder');
+  };
+
+  const questionPoolSize = questionInputMode === 'builder'
+    ? builderQuestions.filter(q => q.text?.trim()).length
+    : parsedQuestions.length;
+
   const validateJson = (raw) => {
     setJsonError('');
     try {
@@ -83,17 +192,18 @@ const TeacherQuiz = () => {
           setJsonError(`Q${i+1}: "correctAnswer" must be a valid option index (0–${q.options.length-1})`); return;
         }
       }
-      setParsedQuestions(parsed);
-      return parsed;
+      setParsedQuestions(normalizeQuestions(parsed));
+      return normalizeQuestions(parsed);
     } catch (e) { setJsonError('Invalid JSON: ' + e.message); }
   };
 
   const handleCreate = async (e) => {
     e.preventDefault();
     if (!form.classId) { showToast('Please select a class', 'error'); return; }
-    const questions = validateJson(jsonInput);
-    if (!questions || jsonError) return;
-    if (questions.length === 0) { setJsonError('Add at least 1 question'); return; }
+    const questions = questionInputMode === 'builder'
+      ? validateBuilder(builderQuestions)
+      : validateJson(jsonInput);
+    if (!questions) return;
     setSaving(true);
     try {
       const res = await fetch(`${TEACHER_BASE}/standalone-quizzes`, {
@@ -106,6 +216,8 @@ const TeacherQuiz = () => {
         showToast('Quiz created! 🎉');
         setForm({ title: '', classId: '', description: '', timeLimitMinutes: 30, questionsToShow: 0, isPublished: false });
         setJsonInput(JSON_TEMPLATE);
+        setBuilderQuestions([EMPTY_QUESTION()]);
+        setQuestionInputMode('builder');
         setView('list');
         await fetchQuizzes();
       } else {
@@ -287,7 +399,7 @@ const TeacherQuiz = () => {
                     placeholder="0 = show all"
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-violet-500 text-sm" />
                   {(() => {
-                    const pool = parsedQuestions.length;
+                    const pool = questionPoolSize;
                     const qts = form.questionsToShow;
                     if (pool === 0) return <p className="text-xs text-gray-400 mt-1">Add questions first to see the preview.</p>;
                     if (qts === 0 || qts >= pool) return <p className="text-xs text-emerald-600 mt-1">✅ Students will see all {pool} questions.</p>;
@@ -304,28 +416,81 @@ const TeacherQuiz = () => {
               </div>
             </div>
 
-            {/* JSON Questions Editor */}
+            {/* Questions: Visual Builder or JSON */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-semibold text-gray-700">Questions (JSON format) <span className="text-red-500">*</span></label>
-                <button type="button" onClick={() => validateJson(jsonInput)} className="text-xs bg-violet-50 text-violet-700 px-3 py-1 rounded-full hover:bg-violet-100 font-medium">
-                  Validate JSON
-                </button>
+                <label className="block text-sm font-semibold text-gray-700">Questions <span className="text-red-500">*</span></label>
+                <div className="flex p-1 bg-gray-100 rounded-xl">
+                  <button type="button" onClick={() => questionInputMode === 'json' && switchToBuilderMode()}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold ${questionInputMode === 'builder' ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-600'}`}>
+                    <LayoutList className="w-3.5 h-3.5" /> Builder
+                  </button>
+                  <button type="button" onClick={() => questionInputMode === 'builder' && switchToJsonMode()}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold ${questionInputMode === 'json' ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-600'}`}>
+                    <Code className="w-3.5 h-3.5" /> JSON
+                  </button>
+                </div>
               </div>
 
+              {questionInputMode === 'builder' && (
+                <div className="space-y-4 mb-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-gray-500">Add questions and mark the correct option for each.</p>
+                    <button type="button" onClick={addBuilderQuestion} className="flex items-center gap-1 text-sm text-violet-600 font-semibold hover:bg-violet-50 px-2 py-1 rounded-lg">
+                      <PlusCircle className="w-4 h-4" /> Add Question
+                    </button>
+                  </div>
+                  {builderQuestions.map((q, qIdx) => (
+                    <div key={qIdx} className="border border-gray-200 rounded-2xl overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-2 bg-violet-50 border-b">
+                        <span className="text-xs font-bold text-violet-700">Q{qIdx + 1}</span>
+                        <button type="button" onClick={() => removeBuilderQuestion(qIdx)} disabled={builderQuestions.length === 1} className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-30">Remove</button>
+                      </div>
+                      <div className="p-4 space-y-3">
+                        <textarea value={q.text} onChange={e => updateBuilderQuestion(qIdx, 'text', e.target.value)} rows={2} placeholder="Question text..." className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-2 focus:ring-violet-500" />
+                        <div className="space-y-2">
+                          {q.options.map((opt, optIdx) => (
+                            <div key={optIdx} className={`flex items-center gap-2 p-2 rounded-lg border ${q.correctAnswer === optIdx ? 'border-emerald-400 bg-emerald-50' : 'border-gray-200'}`}>
+                              <button type="button" onClick={() => updateBuilderQuestion(qIdx, 'correctAnswer', optIdx)} className={`w-7 h-7 rounded-full border-2 text-xs font-bold flex items-center justify-center ${q.correctAnswer === optIdx ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-300 text-gray-400'}`}>
+                                {q.correctAnswer === optIdx ? <CheckCircle2 className="w-3.5 h-3.5" /> : OPTION_LABELS[optIdx]}
+                              </button>
+                              <input value={opt} onChange={e => updateBuilderOption(qIdx, optIdx, e.target.value)} placeholder={`Option ${OPTION_LABELS[optIdx]}`} className="flex-1 px-2 py-1.5 border rounded-lg text-sm" />
+                              {q.options.length > 2 && <button type="button" onClick={() => removeBuilderOption(qIdx, optIdx)} className="text-gray-400 text-xs">x</button>}
+                            </div>
+                          ))}
+                          {q.options.length < 4 && <button type="button" onClick={() => addBuilderOption(qIdx)} className="text-xs text-violet-600">+ Add option</button>}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input value={q.explanation} onChange={e => updateBuilderQuestion(qIdx, 'explanation', e.target.value)} placeholder="Explanation (optional)" className="px-3 py-2 border rounded-xl text-sm" />
+                          <input type="number" min="1" value={q.points} onChange={e => updateBuilderQuestion(qIdx, 'points', e.target.value)} placeholder="Points" className="px-3 py-2 border rounded-xl text-sm max-w-[100px]" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {questionInputMode === 'json' && (
+              <>
               {/* Format guide */}
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-3 text-xs text-blue-800">
                 <p className="font-bold mb-1">📋 JSON Structure Guide:</p>
                 <p>Each question must have: <code className="bg-blue-100 px-1 rounded">text</code>, <code className="bg-blue-100 px-1 rounded">options</code> (array of 2–4 strings), <code className="bg-blue-100 px-1 rounded">correctAnswer</code> (index 0–3), optional <code className="bg-blue-100 px-1 rounded">explanation</code> and <code className="bg-blue-100 px-1 rounded">points</code> (default 1).</p>
               </div>
 
-              <textarea value={jsonInput} onChange={e => { setJsonInput(e.target.value); setJsonError(''); setParsedQuestions([]); }} rows={18}
+              <textarea value={jsonInput} onChange={e => { setJsonInput(e.target.value); setJsonError(''); setParsedQuestions([]); }} rows={14}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-violet-500 text-xs font-mono resize-y"
                 spellCheck={false} />
-
-              {jsonError && <p className="mt-2 text-red-600 text-xs font-medium">{jsonError}</p>}
+              <button type="button" onClick={() => validateJson(jsonInput)} className="mt-2 text-xs bg-violet-50 text-violet-700 px-3 py-1.5 rounded-full hover:bg-violet-100 font-medium">Validate JSON</button>
               {parsedQuestions.length > 0 && !jsonError && (
                 <p className="mt-2 text-emerald-600 text-xs font-medium">✅ {parsedQuestions.length} question{parsedQuestions.length !== 1 ? 's' : ''} validated successfully</p>
+              )}
+              </>
+              )}
+
+              {jsonError && <p className="mt-2 text-red-600 text-xs font-medium">{jsonError}</p>}
+              {!jsonError && questionInputMode === 'builder' && builderQuestions.some(q => q.text?.trim()) && (
+                <p className="mt-2 text-emerald-600 text-xs font-medium flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> {builderQuestions.filter(q => q.text?.trim()).length} question(s) in builder</p>
               )}
             </div>
 

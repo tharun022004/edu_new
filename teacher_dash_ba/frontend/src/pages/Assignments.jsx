@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, FileText, Clock, CheckCircle, Users, Search, Trophy, AlertCircle, MoreHorizontal, X, ChevronDown, Trash2, PlusCircle, Eye, Star, MessageSquare } from 'lucide-react';
+import { Plus, FileText, Clock, CheckCircle, Users, Search, Trophy, AlertCircle, X, ChevronDown, Trash2, PlusCircle, Eye, Star, MessageSquare, Upload, ListOrdered, FileUp, ExternalLink } from 'lucide-react';
 import apiService from '../services/api';
 
 const TYPE_CONFIG = {
@@ -26,7 +26,10 @@ const Assignments = () => {
   const [submissions, setSubmissions] = useState([]);
   const [gradingData, setGradingData] = useState({});
   const [savingGrade, setSavingGrade] = useState('');
-  const [createStep, setCreateStep] = useState(1); // 1=details, 2=questions
+  const [createStep, setCreateStep] = useState(1); // 1=details, 2=questions or pdf
+  const [createMode, setCreateMode] = useState('manual'); // 'manual' | 'pdf'
+  const [pdfFile, setPdfFile] = useState(null);
+  const [pdfUploading, setPdfUploading] = useState(false);
   const [toast, setToast] = useState(null);
 
   const [newAssignment, setNewAssignment] = useState({
@@ -80,6 +83,17 @@ const Assignments = () => {
       questions: [{ question: '', points: 10 }]
     });
     setCreateStep(1);
+    setCreateMode('manual');
+    setPdfFile(null);
+  };
+
+  const TEACHER_API = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+  const getPdfUrl = (path) => {
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
+    if (path.startsWith('/uploads')) return `${TEACHER_API.replace('/api', '')}${path}`;
+    if (path.includes('uploads/content')) return `${TEACHER_API.replace('/api', '')}/${path.replace(/\\/g, '/')}`;
+    return `${TEACHER_API.replace('/api', '')}/uploads/content/${path.split(/[/\\]/).pop()}`;
   };
 
   // Question builder helpers
@@ -105,16 +119,64 @@ const Assignments = () => {
     });
   };
 
+  const uploadPdfFile = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiService.uploadContentFile(formData);
+    return res.data;
+  };
+
   const handleCreateAssignment = async (e) => {
     e.preventDefault();
     if (!newAssignment.class) { showToast('Please select a class', 'error'); return; }
-    // Compute totalMarks from questions
-    const totalMarks = newAssignment.questions.reduce((sum, q) => sum + (Number(q.points) || 0), 0) || newAssignment.totalMarks;
+
+    const description = newAssignment.description?.trim() ||
+      (createMode === 'pdf' ? 'Complete the assignment using the attached PDF document.' : 'Answer each question below.');
+
     try {
+      if (createMode === 'pdf') {
+        if (!pdfFile) { showToast('Please upload a PDF file', 'error'); return; }
+        setPdfUploading(true);
+        const uploaded = await uploadPdfFile(pdfFile);
+        const payload = {
+          title: newAssignment.title,
+          type: newAssignment.type,
+          assignmentType: 'upload',
+          class: newAssignment.class,
+          dueDate: newAssignment.dueDate,
+          description,
+          instructions: newAssignment.instructions || 'Read the attached PDF and submit your work as instructed by your teacher.',
+          totalMarks: Number(newAssignment.totalMarks) || 100,
+          status: 'active',
+          questions: [],
+          attachments: [{
+            filename: uploaded.filename,
+            originalName: uploaded.originalName,
+            mimetype: uploaded.mimetype,
+            size: uploaded.size,
+            path: uploaded.url || uploaded.path
+          }]
+        };
+        const res = await apiService.createAssignment(payload);
+        if (res.success) {
+          setAssignments(prev => [res.data, ...prev]);
+          setShowCreateModal(false);
+          resetCreateForm();
+          showToast('PDF assignment published! Students can download and complete it.');
+        }
+        return;
+      }
+
+      const emptyQ = newAssignment.questions.some(q => !q.question?.trim());
+      if (emptyQ) { showToast('Please fill in all questions', 'error'); return; }
+
+      const totalMarks = newAssignment.questions.reduce((sum, q) => sum + (Number(q.points) || 0), 0) || newAssignment.totalMarks;
       const payload = {
         ...newAssignment,
+        description,
+        assignmentType: 'qa',
         totalMarks,
-        status: 'active',  // publish immediately so students can see it
+        status: 'active',
         questions: newAssignment.questions.map(q => ({
           question: q.question,
           type: 'essay',
@@ -130,6 +192,8 @@ const Assignments = () => {
       }
     } catch (err) {
       showToast(err.message || 'Failed to create assignment', 'error');
+    } finally {
+      setPdfUploading(false);
     }
   };
 
@@ -249,7 +313,7 @@ const Assignments = () => {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Assignments</h1>
-            <p className="text-gray-500 mt-1">Create Q&amp;A assignments, manage submissions &amp; grade students</p>
+            <p className="text-gray-500 mt-1">Create Q&amp;A or PDF assignments, manage submissions &amp; grade students</p>
           </div>
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -350,9 +414,14 @@ const Assignments = () => {
                             <div className="flex flex-wrap items-center gap-2 mb-1">
                               <h3 className="text-base font-bold text-gray-900">{assignment.title}</h3>
                               {getStatusBadge(assignment.status)}
+                              {assignment.assignmentType === 'upload' && (
+                                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                                  📎 PDF
+                                </span>
+                              )}
                               {assignment.assignmentType === 'qa' && (
                                 <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${tc(assignment.type).badge}`}>
-                                  {tc(assignment.type).emoji} {assignment.type || 'Q&A'}
+                                  {tc(assignment.type).emoji} Q&amp;A
                                 </span>
                               )}
                               {isOverdue && <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full border border-red-200">Overdue</span>}
@@ -360,7 +429,7 @@ const Assignments = () => {
                             <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mb-2">
                               <span className="font-medium text-gray-700">{assignment.class?.name || 'No class'}</span>
                               <span>•</span>
-                              <span>{assignment.questions?.length || 0} Questions</span>
+                              <span>{assignment.assignmentType === 'upload' ? 'PDF Document' : `${assignment.questions?.length || 0} Questions`}</span>
                               <span>•</span>
                               <span>{assignment.totalMarks} Marks</span>
                               <span>•</span>
@@ -428,7 +497,9 @@ const Assignments = () => {
             <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
               <div>
                 <h3 className="text-xl font-bold text-gray-900">Create {newAssignment.type} {tc(newAssignment.type).emoji}</h3>
-                <p className="text-sm text-gray-500 mt-0.5">Step {createStep} of 2</p>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Step {createStep} of 2 · {createMode === 'pdf' ? 'PDF upload' : 'Question by question'}
+                </p>
               </div>
               <button onClick={() => { setShowCreateModal(false); resetCreateForm(); }} className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl">
                 <X className="w-5 h-5" />
@@ -447,6 +518,38 @@ const Assignments = () => {
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 {createStep === 1 && (
                   <>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">How do you want to create this assignment?</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => { setCreateMode('manual'); setPdfFile(null); }}
+                          className={`p-4 rounded-2xl border-2 text-left transition-all ${
+                            createMode === 'manual'
+                              ? 'border-blue-500 bg-blue-50 shadow-sm'
+                              : 'border-gray-200 hover:border-gray-300 bg-white'
+                          }`}
+                        >
+                          <ListOrdered className={`w-6 h-6 mb-2 ${createMode === 'manual' ? 'text-blue-600' : 'text-gray-400'}`} />
+                          <p className="font-semibold text-gray-900 text-sm">Add questions one by one</p>
+                          <p className="text-xs text-gray-500 mt-1">Build open-ended Q&amp;A questions with marks per question</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCreateMode('pdf')}
+                          className={`p-4 rounded-2xl border-2 text-left transition-all ${
+                            createMode === 'pdf'
+                              ? 'border-amber-500 bg-amber-50 shadow-sm'
+                              : 'border-gray-200 hover:border-gray-300 bg-white'
+                          }`}
+                        >
+                          <FileUp className={`w-6 h-6 mb-2 ${createMode === 'pdf' ? 'text-amber-600' : 'text-gray-400'}`} />
+                          <p className="font-semibold text-gray-900 text-sm">Upload PDF</p>
+                          <p className="text-xs text-gray-500 mt-1">Attach a PDF worksheet or assignment sheet for students</p>
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-1.5">Title <span className="text-red-500">*</span></label>
@@ -520,7 +623,58 @@ const Assignments = () => {
                   </>
                 )}
 
-                {createStep === 2 && (
+                {createStep === 2 && createMode === 'pdf' && (
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="font-semibold text-gray-900">Upload assignment PDF</h4>
+                      <p className="text-xs text-gray-500 mt-0.5">Students will download this PDF and submit their work as instructed.</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1.5">Total Marks</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={newAssignment.totalMarks}
+                        onChange={e => setNewAssignment(p => ({ ...p, totalMarks: e.target.value }))}
+                        className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+                    <label
+                      className={`flex flex-col items-center justify-center w-full min-h-[200px] border-2 border-dashed rounded-2xl cursor-pointer transition-all ${
+                        pdfFile ? 'border-amber-400 bg-amber-50' : 'border-gray-300 hover:border-amber-400 hover:bg-amber-50/50'
+                      }`}
+                    >
+                      <input
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        className="hidden"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (file && file.type !== 'application/pdf') {
+                            showToast('Please select a PDF file only', 'error');
+                            return;
+                          }
+                          setPdfFile(file || null);
+                        }}
+                      />
+                      {pdfFile ? (
+                        <>
+                          <FileText className="w-12 h-12 text-amber-600 mb-3" />
+                          <p className="font-semibold text-gray-900 text-sm">{pdfFile.name}</p>
+                          <p className="text-xs text-gray-500 mt-1">{(pdfFile.size / 1024).toFixed(1)} KB · Click to change</p>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-12 h-12 text-gray-400 mb-3" />
+                          <p className="font-semibold text-gray-700 text-sm">Click to upload PDF</p>
+                          <p className="text-xs text-gray-500 mt-1">PDF only</p>
+                        </>
+                      )}
+                    </label>
+                  </div>
+                )}
+
+                {createStep === 2 && createMode === 'manual' && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
@@ -586,14 +740,22 @@ const Assignments = () => {
                       }}
                       className="bg-blue-600 text-white px-6 py-2 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors"
                     >
-                      Next: Add Questions →
+                      {createMode === 'pdf' ? 'Next: Upload PDF →' : 'Next: Add Questions →'}
                     </button>
                   </>
                 ) : (
                   <>
                     <button type="button" onClick={() => setCreateStep(1)} className="px-5 py-2 text-gray-600 hover:text-gray-800 font-medium text-sm">← Back</button>
-                    <button type="submit" className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-xl font-semibold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all">
-                      Create Assignment
+                    <button
+                      type="submit"
+                      disabled={pdfUploading}
+                      className={`text-white px-6 py-2 rounded-xl font-semibold text-sm transition-all disabled:opacity-50 ${
+                        createMode === 'pdf'
+                          ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700'
+                          : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
+                      }`}
+                    >
+                      {pdfUploading ? 'Uploading...' : createMode === 'pdf' ? 'Publish PDF Assignment' : 'Create Assignment'}
                     </button>
                   </>
                 )}
@@ -616,7 +778,13 @@ const Assignments = () => {
             <div className="flex-1 overflow-y-auto p-6 space-y-5">
               <div className="flex flex-wrap gap-2">
                 {getStatusBadge(selectedAssignment.status)}
-                <span className="px-2.5 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full border border-purple-200">Q&amp;A</span>
+                <span className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${
+                  selectedAssignment.assignmentType === 'upload'
+                    ? 'bg-amber-100 text-amber-800 border-amber-200'
+                    : 'bg-purple-100 text-purple-700 border-purple-200'
+                }`}>
+                  {selectedAssignment.assignmentType === 'upload' ? '📎 PDF' : 'Q&amp;A'}
+                </span>
                 <span className="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-full">{selectedAssignment.totalMarks} Total Marks</span>
               </div>
               <div className="text-sm text-gray-600 space-y-1">
@@ -625,6 +793,28 @@ const Assignments = () => {
                 {selectedAssignment.description && <p><span className="font-semibold">Description:</span> {selectedAssignment.description}</p>}
                 {selectedAssignment.instructions && <p><span className="font-semibold">Instructions:</span> {selectedAssignment.instructions}</p>}
               </div>
+              {selectedAssignment.assignmentType === 'upload' && selectedAssignment.attachments?.length > 0 && (
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-3">Attached PDF</h4>
+                  {selectedAssignment.attachments.map((att, i) => (
+                    <a
+                      key={i}
+                      href={getPdfUrl(att.path)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-colors"
+                    >
+                      <FileText className="w-8 h-8 text-amber-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 text-sm truncate">{att.originalName || att.filename}</p>
+                        <p className="text-xs text-gray-500">Click to open PDF</p>
+                      </div>
+                      <ExternalLink className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    </a>
+                  ))}
+                </div>
+              )}
+              {selectedAssignment.assignmentType !== 'upload' && (
               <div>
                 <h4 className="font-semibold text-gray-900 mb-3">Questions ({selectedAssignment.questions?.length || 0})</h4>
                 <div className="space-y-3">
@@ -639,6 +829,7 @@ const Assignments = () => {
                   ))}
                 </div>
               </div>
+              )}
             </div>
           </div>
         </div>
@@ -695,8 +886,29 @@ const Assignments = () => {
                           </div>
                         </div>
 
-                        {/* Q&A Answers */}
                         <div className="p-4 space-y-3">
+                          {selectedAssignment.assignmentType === 'upload' && sub.attachments?.length > 0 && (
+                            <div className="mb-4">
+                              <h5 className="text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">Student PDF Submission</h5>
+                              <div className="space-y-2">
+                                {sub.attachments.map((att, idx) => (
+                                  <a
+                                    key={idx}
+                                    href={getPdfUrl(att.path)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100"
+                                  >
+                                    <FileText className="w-5 h-5 text-amber-600" />
+                                    <span className="text-sm font-medium text-gray-900 truncate">{att.originalName || att.filename}</span>
+                                    <ExternalLink className="w-4 h-4 text-amber-600 ml-auto" />
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Q&A Answers */}
                           {(selectedAssignment.questions || []).map((q, qi) => {
                             const ans = (sub.answers || []).find(a => a.questionIndex === qi);
                             return (

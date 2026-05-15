@@ -414,7 +414,15 @@ const Dashboard = () => {
     setShowClassDetailsModal(true);
   };
 
-  const displayRecentActivity = recentActivity.slice(0, 10);
+  const ACTIVITY_STYLES = {
+    doubt: { icon: HelpCircle, iconBg: 'bg-violet-100', iconColor: 'text-violet-600', border: 'border-violet-100' },
+    assignment: { icon: FileText, iconBg: 'bg-blue-100', iconColor: 'text-blue-600', border: 'border-blue-100' },
+    content: { icon: Upload, iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', border: 'border-emerald-100' },
+  };
+  const getActivityStyle = (type) => ACTIVITY_STYLES[type] || { icon: Activity, iconBg: 'bg-gray-100', iconColor: 'text-gray-600', border: 'border-gray-100' };
+
+  const recentActivityPreview = recentActivity.slice(0, 3);
+  const displayRecentActivity = recentActivity;
 
   const getPriorityColor = (priority) => {
     switch (priority) {
@@ -575,32 +583,42 @@ const Dashboard = () => {
 
             {/* Recent Activity */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold text-gray-900">Recent Activity</h3>
-                <Activity className="w-5 h-5 text-gray-500" />
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Recent Activity</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Latest updates from your classes</p>
+                </div>
+                <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">Last 3</span>
               </div>
-              <div className="space-y-4">
-                {displayRecentActivity.map((activity) => {
-                  const Icon = activity.icon || Activity; // Default to Activity icon if undefined
+              <div className="space-y-3">
+                {recentActivityPreview.map((activity) => {
+                  const style = getActivityStyle(activity.type);
+                  const Icon = style.icon;
                   return (
-                    <div key={activity.id} className="flex items-start space-x-4 p-4 rounded-xl hover:bg-gray-50 transition-colors">
-                      <div className="p-2 rounded-lg bg-gray-100">
-                        <Icon className={`w-4 h-4 ${activity.color || 'text-gray-600'}`} />
+                    <div key={activity.id} className={`flex items-start gap-4 p-4 rounded-xl border ${style.border} bg-gradient-to-r from-white to-gray-50/80`}>
+                      <div className={`p-2.5 rounded-xl ${style.iconBg} flex-shrink-0`}>
+                        <Icon className={`w-4 h-4 ${style.iconColor}`} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm">
-                          <span className="font-medium text-gray-900">{activity.student}</span>
+                        <p className="text-sm text-gray-800 leading-snug">
+                          <span className="font-semibold text-gray-900">{activity.student}</span>
                           <span className="text-gray-600"> {activity.action}</span>
                         </p>
-                        <p className="text-xs text-gray-500 mt-1">{activity.time}</p>
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                          <span className="text-[11px] font-medium text-gray-500">{activity.time}</span>
+                          {activity.class && (
+                            <span className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{activity.class}</span>
+                          )}
+                        </div>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-gray-400" />
                     </div>
                   );
                 })}
               </div>
-              <div className="mt-6 text-center">
-                <button 
+              {recentActivity.length > 3 && (
+              <div className="mt-5 pt-4 border-t border-gray-100 text-center">
+                <button
+                  type="button"
                   onClick={() => setShowActivityModal(true)}
                   className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center mx-auto space-x-1 hover:bg-indigo-50 px-4 py-2 rounded-xl transition-colors"
                 >
@@ -608,6 +626,7 @@ const Dashboard = () => {
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
+              )}
             </div>
           </div>
         </div>
@@ -960,20 +979,25 @@ const Dashboard = () => {
             
             <div className="space-y-4">
               {displayRecentActivity.map((activity) => {
-                const Icon = activity.icon || Activity; // Default to Activity icon if undefined
+                const style = getActivityStyle(activity.type);
+                const Icon = style.icon;
                 return (
-                  <div key={activity.id} className="flex items-start space-x-4 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                    <div className="p-2 rounded-lg bg-white shadow-sm">
-                      <Icon className={`w-5 h-5 ${activity.color || 'text-gray-600'}`} />
+                  <div key={activity.id} className={`flex items-start gap-4 p-4 rounded-xl border ${style.border} bg-gray-50`}>
+                    <div className={`p-2.5 rounded-xl ${style.iconBg}`}>
+                      <Icon className={`w-5 h-5 ${style.iconColor}`} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm">
-                        <span className="font-medium text-gray-900">{activity.student}</span>
+                      <p className="text-sm text-gray-800">
+                        <span className="font-semibold text-gray-900">{activity.student}</span>
                         <span className="text-gray-600"> {activity.action}</span>
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">{activity.time}</p>
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-500">{activity.time}</span>
+                        {activity.class && (
+                          <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{activity.class}</span>
+                        )}
+                      </div>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-gray-400" />
                   </div>
                 );
               })}
