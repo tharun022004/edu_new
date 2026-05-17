@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pydantic
+python-dotenv
+faiss-cpu
+sentence-transformers
+langchain-community
+langchain-core
+langchain-groq
+langchain-text-splitters
+
+# LLM (choose ONE)
+google-generativeai
+# openai
