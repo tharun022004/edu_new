@@ -506,11 +506,10 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column - Class Info */}
-          <div className="lg:col-span-1 space-y-6">
-            {/* Next Class */}
+        {/* Main Content Grid - Next Class full width, other panels below in two columns */}
+        <div className="grid grid-cols-1 gap-8">
+          {/* Next Class - full width */}
+          <div>
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
               <div className={`bg-gradient-to-r ${nextClass.color} p-6 text-white`}>
                 <div className="flex items-center justify-between mb-4">
@@ -535,105 +534,114 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* Right Column - Tasks & AI */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Tasks & AI Suggestions Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Today's Tasks */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-bold text-gray-900">Today's Tasks</h3>
-                  <Target className="w-5 h-5 text-gray-500" />
-                </div>
-                <div className="space-y-3">
-                  {tasks.slice(0, 4).map((item) => (
-                    <div key={item._id} className="flex items-start space-x-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={item.completed}
-                        onChange={() => handleToggleTask(item)}
-                        className="mt-1 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className={`text-sm font-medium ${item.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
-                          {item.title}
-                        </div>
-                        <div className="flex items-center justify-between mt-1">
-                          <span className={`text-xs px-2 py-1 rounded-full border ${getPriorityColor(item.priority)}`}>
-                            {item.priority.toUpperCase()}
-                          </span>
-                          <span className="text-xs text-gray-500">{new Date(item.dueDate).toLocaleDateString()}</span>
-                        </div>
+          {/* Two-column row: Tasks & Recent Activity */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Today's Tasks */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-gray-900">Today's Tasks</h3>
+                <Target className="w-5 h-5 text-gray-500" />
+              </div>
+              <div className="space-y-3">
+                {tasks.slice(0, 4).map((item) => (
+                  <div key={item._id} className="flex items-start space-x-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={item.completed}
+                      onChange={() => handleToggleTask(item)}
+                      className="mt-1 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-sm font-medium ${item.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
+                        {item.title}
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className={`text-xs px-2 py-1 rounded-full border ${getPriorityColor(item.priority)}`}>
+                          {item.priority.toUpperCase()}
+                        </span>
+                        <span className="text-xs text-gray-500">{new Date(item.dueDate).toLocaleDateString()}</span>
                       </div>
                     </div>
-                  ))}
-                </div>
-                <div className="flex space-x-2 mt-4">
-                  <button 
-                    onClick={() => setShowTaskModal(true)}
-                    className="flex-1 text-indigo-600 hover:text-indigo-700 text-sm font-medium py-2 hover:bg-indigo-50 rounded-xl transition-colors"
-                  >
-                    View All Tasks
-                  </button>
-                  <button 
-                    onClick={() => setShowAddTaskModal(true)}
-                    className="flex items-center space-x-1 bg-indigo-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors"
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>Add Task</span>
-                  </button>
-                </div>
+                  </div>
+                ))}
               </div>
-
-              {/* Removed AI Suggestions placeholder */}
+              <div className="flex space-x-2 mt-4">
+                <button 
+                  onClick={() => setShowTaskModal(true)}
+                  className="flex-1 text-indigo-600 hover:text-indigo-700 text-sm font-medium py-2 hover:bg-indigo-50 rounded-xl transition-colors"
+                >
+                  View All Tasks
+                </button>
+                <button 
+                  onClick={() => setShowAddTaskModal(true)}
+                  className="flex items-center space-x-1 bg-indigo-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add Task</span>
+                </button>
+              </div>
             </div>
 
             {/* Recent Activity */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className="flex items-center justify-between mb-5">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">Recent Activity</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">Latest updates from your classes</p>
+            <div className="lg:col-span-1 min-w-0">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 lg:p-6 flex flex-col">
+                <div className="flex items-center justify-between mb-5">
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">Recent Activity</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">Latest updates from your classes</p>
+                  </div>
+                  <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">Last 3</span>
                 </div>
-                <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">Last 3</span>
-              </div>
-              <div className="space-y-3">
-                {recentActivityPreview.map((activity) => {
-                  const style = getActivityStyle(activity.type);
-                  const Icon = style.icon;
-                  return (
-                    <div key={activity.id} className={`flex items-start gap-4 p-4 rounded-xl border ${style.border} bg-gradient-to-r from-white to-gray-50/80`}>
-                      <div className={`p-2.5 rounded-xl ${style.iconBg} flex-shrink-0`}>
-                        <Icon className={`w-4 h-4 ${style.iconColor}`} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-gray-800 leading-snug">
-                          <span className="font-semibold text-gray-900">{activity.student}</span>
-                          <span className="text-gray-600"> {activity.action}</span>
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2 mt-2">
-                          <span className="text-[11px] font-medium text-gray-500">{activity.time}</span>
-                          {activity.class && (
-                            <span className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{activity.class}</span>
-                          )}
+                <div className="space-y-3 flex-1">
+                  {recentActivityPreview.length > 0 ? (
+                    recentActivityPreview.map((activity) => {
+                      const style = getActivityStyle(activity.type);
+                      const Icon = style.icon;
+                      return (
+                        <div
+                          key={activity.id}
+                          className={`flex items-start gap-4 p-4 rounded-xl border ${style.border} bg-gradient-to-r from-white to-gray-50/80`}
+                        >
+                          <div className={`p-2.5 rounded-xl ${style.iconBg} flex-shrink-0`}>
+                            <Icon className={`w-4 h-4 ${style.iconColor}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-800 leading-snug">
+                              <span className="font-semibold text-gray-900">{activity.student}</span>
+                              <span className="text-gray-600"> {activity.action}</span>
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                              <span className="text-[11px] font-medium text-gray-500">{activity.time}</span>
+                              {activity.class && (
+                                <span className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                                  {activity.class}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center text-gray-500 py-8">
+                      <p>No recent activity yet.</p>
+                      <p className="text-xs mt-1">Create classes, ask doubts, or post content to see updates here.</p>
                     </div>
-                  );
-                })}
+                  )}
+                </div>
+                {recentActivity.length > 3 && (
+                  <div className="mt-5 pt-4 border-t border-gray-100 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowActivityModal(true)}
+                      className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center justify-center mx-auto space-x-1 hover:bg-indigo-50 px-4 py-2 rounded-xl transition-colors w-full"
+                    >
+                      <span>View All Activity</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
-              {recentActivity.length > 3 && (
-              <div className="mt-5 pt-4 border-t border-gray-100 text-center">
-                <button
-                  type="button"
-                  onClick={() => setShowActivityModal(true)}
-                  className="text-indigo-600 hover:text-indigo-700 text-sm font-medium flex items-center mx-auto space-x-1 hover:bg-indigo-50 px-4 py-2 rounded-xl transition-colors"
-                >
-                  <span>View All Activity</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-              )}
             </div>
           </div>
         </div>

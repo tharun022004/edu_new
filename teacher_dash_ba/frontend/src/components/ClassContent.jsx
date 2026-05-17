@@ -1,25 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Plus, 
+import {
+  Plus,
   ChevronDown,
   ChevronRight,
-  Play, 
-  FileText, 
-  Brain, 
-  Edit3, 
-  Trash2, 
-  Upload, 
-  Eye, 
-  Download, 
-  Clock, 
-  Users, 
-  BarChart3, 
-  BookOpen, 
-  Video, 
-  HelpCircle, 
-  CheckCircle, 
-  X, 
+  Play,
+  FileText,
+  Edit3,
+  Trash2,
+  Upload,
+  Eye,
+  Download,
+  Clock,
+  Users,
+  BarChart3,
+  BookOpen,
+  Video,
+  HelpCircle,
+  CheckCircle,
+  X,
   Save,
   MoreHorizontal,
   TrendingUp,
@@ -28,7 +27,6 @@ import {
   Image,
   Music,
   Link as LinkIcon,
-  FileImage,
   Headphones,
   Monitor,
   PenTool,
@@ -36,7 +34,7 @@ import {
   Filter,
   FolderOpen,
   AlertCircle,
-  Loader
+  Loader,
 } from 'lucide-react';
 import apiService from '../services/api';
 
@@ -45,6 +43,8 @@ const ClassContent = ({ classId, classData }) => {
   const [teacherClasses, setTeacherClasses] = useState([]);
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [showClassSelectModal, setShowClassSelectModal] = useState(!classId);
+  const [previewContent, setPreviewContent] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
     if (!classId) {
@@ -82,6 +82,16 @@ const ClassContent = ({ classId, classData }) => {
   const [loading, setLoading] = useState(!!classId);
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  const resolveFileUrl = (candidate) => {
+    if (!candidate) return '';
+    if (candidate.startsWith('http://') || candidate.startsWith('https://') || candidate.startsWith('blob:') || candidate.startsWith('data:')) {
+      return candidate;
+    }
+    const normalizedPath = candidate.startsWith('/') ? candidate : `/${candidate}`;
+    return `http://localhost:5001${normalizedPath.replace(/\\/g, '/')}`;
+  };
 
   // Organize content by chapters and subtopics
   const organizeContent = (contentList) => {
@@ -658,6 +668,96 @@ const ClassContent = ({ classId, classData }) => {
     }
   };
 
+  const getContentUrl = (contentItem) => {
+    return resolveFileUrl(
+      contentItem?.file?.url ||
+      contentItem?.file?.path ||
+      contentItem?.link?.url ||
+      contentItem?.url ||
+      contentItem?.attachment ||
+      ''
+    );
+  };
+
+  const canPreviewPdf = (contentItem) => {
+    const url = getContentUrl(contentItem);
+    const extension = url.split('.').pop().toLowerCase().split('?')[0];
+    const mimeType = (contentItem?.file?.mimetype || contentItem?.mimeType || '').toLowerCase();
+    return contentItem?.type === 'pdf' || contentItem?.type === 'document' || extension === 'pdf' || mimeType === 'application/pdf';
+  };
+
+  const openPreview = (contentItem) => {
+    const url = getContentUrl(contentItem);
+    if (!url) {
+      alert('No file available to preview for this item');
+      return;
+    }
+
+    if (!canPreviewPdf(contentItem)) {
+      alert('Only PDF files can be previewed here.');
+      return;
+    }
+
+    setPreviewLoading(true);
+    setPreviewContent({
+      title: contentItem.title || 'PDF Preview',
+      url,
+      type: contentItem.type,
+      className: classData?.name || 'Class Content'
+    });
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    const loadPreviewFile = async () => {
+      if (!previewContent?.url) {
+        setPreviewUrl('');
+        setPreviewLoading(false);
+        return;
+      }
+
+      try {
+        setPreviewLoading(true);
+        const response = await fetch(previewContent.url);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch PDF: ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const objectUrl = window.URL.createObjectURL(blob);
+
+        if (!active) {
+          window.URL.revokeObjectURL(objectUrl);
+          return;
+        }
+
+        setPreviewUrl(objectUrl);
+        setPreviewLoading(false);
+      } catch (error) {
+        console.error('Error loading preview file:', error);
+        if (active) {
+          setPreviewUrl(previewContent.url);
+          setPreviewLoading(false);
+        }
+      }
+    };
+
+    loadPreviewFile();
+
+    return () => {
+      active = false;
+    };
+  }, [previewContent]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl && previewUrl.startsWith('blob:')) {
+        window.URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
   // If no classId is provided (e.g. when accessed from the top-level `/content` route),
   // show a friendly message instead of an infinite loading state.
   if (!classId) {
@@ -943,7 +1043,19 @@ const ClassContent = ({ classId, classData }) => {
                           <div className="border-t border-gray-200 p-6 bg-gray-50">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                               {subtopic.contents.map((contentItem) => (
-                                <div key={contentItem._id} className={`p-4 rounded-xl border-2 ${getContentColor(contentItem.type)} hover:shadow-md transition-all duration-200`}>
+                                <div
+                                  key={contentItem._id}
+                                  role={canPreviewPdf(contentItem) ? 'button' : undefined}
+                                  tabIndex={canPreviewPdf(contentItem) ? 0 : undefined}
+                                  onClick={() => canPreviewPdf(contentItem) && openPreview(contentItem)}
+                                  onKeyDown={(e) => {
+                                    if (canPreviewPdf(contentItem) && (e.key === 'Enter' || e.key === ' ')) {
+                                      e.preventDefault();
+                                      openPreview(contentItem);
+                                    }
+                                  }}
+                                  className={`p-4 rounded-xl border-2 ${getContentColor(contentItem.type)} hover:shadow-md transition-all duration-200 ${canPreviewPdf(contentItem) ? 'cursor-pointer' : ''}`}
+                                >
                                   <div className="flex items-start justify-between mb-3">
                                     <div className="flex items-center space-x-2">
                                       {getContentIcon(contentItem.type)}
@@ -951,14 +1063,20 @@ const ClassContent = ({ classId, classData }) => {
                                     </div>
                                     <div className="flex items-center space-x-1">
                                       <button 
-                                        onClick={() => handlePublishContent(contentItem._id, contentItem.status)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handlePublishContent(contentItem._id, contentItem.status);
+                                        }}
                                         className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
                                         title={contentItem.status === 'published' ? 'Unpublish' : 'Publish'}
                                       >
                                         {contentItem.status === 'published' ? <CheckCircle className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                       </button>
                                       <button 
-                                        onClick={() => handleDeleteContent(contentItem._id)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteContent(contentItem._id);
+                                        }}
                                         className="p-1 text-gray-400 hover:text-red-600 transition-colors"
                                       >
                                         <Trash2 className="w-4 h-4" />
@@ -972,6 +1090,18 @@ const ClassContent = ({ classId, classData }) => {
                                     {contentItem.metadata?.fileSize && <div>📦 {contentItem.metadata.fileSize}</div>}
                                     {contentItem.link?.url && <div>🔗 {contentItem.link.url}</div>}
                                   </div>
+                                  {canPreviewPdf(contentItem) && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openPreview(contentItem);
+                                      }}
+                                      className="mt-3 inline-flex items-center gap-1 rounded-full bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700 transition-colors"
+                                    >
+                                      View PDF Preview
+                                    </button>
+                                  )}
                                 </div>
                               ))}
                               
@@ -1162,6 +1292,50 @@ const ClassContent = ({ classId, classData }) => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {previewContent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">{previewContent.title}</h3>
+                <p className="text-xs text-gray-500">{previewContent.url}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewUrl || previewContent.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Open in new tab
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreviewContent(null);
+                    setPreviewUrl('');
+                  }}
+                  className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+            <div className="h-[78vh] bg-gray-100">
+              {previewLoading ? (
+                <div className="flex h-full items-center justify-center text-sm text-gray-600">Loading PDF...</div>
+              ) : (
+                <iframe
+                  title={previewContent.title}
+                  src={previewUrl || previewContent.url}
+                  className="h-full w-full border-0"
+                />
+              )}
+            </div>
           </div>
         </div>
       )}
