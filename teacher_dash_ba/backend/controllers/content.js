@@ -1269,7 +1269,7 @@ exports.uploadFile = async (req, res, next) => {
     const classId = req.body.class_id || '';
     const teacherId = req.user?.id || req.body.teacher_id || '';
     const isPdf = req.file.mimetype === 'application/pdf' || req.file.originalname.toLowerCase().endsWith('.pdf');
-    const addToAi = req.body.addToAi === undefined ? isPdf : wantsAiIndexing(req.body.addToAi);
+    const addToAi = req.body.addToAi === undefined ? isPdf : (req.body.addToAi === 'true' || req.body.addToAi === true);
 
     // Extract text from PDF and send it to the AI knowledge base in the same request.
     let extractedText = null;

@@ -198,72 +198,43 @@ const Content = () => {
     }
   };
 
-  // initial sample content
+  // Fetch content from backend
+  const fetchContent = async () => {
+    try {
+      const response = await apiService.get('/content');
+      if (response.data && Array.isArray(response.data.data)) {
+        // Map backend content to the format expected by the UI
+        const mappedContent = response.data.data.map(item => ({
+          id: item._id,
+          dbId: item._id,
+          title: item.title,
+          type: item.type === 'document' ? 'pdf' : item.type,
+          class: item.class ? item.class.name : 'Unassigned',
+          classId: item.class ? item.class._id : '',
+          subject: item.subject,
+          chapter: item.chapter?.name || item.chapter,
+          topic: item.subtopic?.title || item.topic,
+          size: item.file?.size ? `${(item.file.size / 1024 / 1024).toFixed(2)} MB` : '-',
+          uploadDate: item.createdAt || new Date().toISOString(),
+          downloads: item.downloads || 0,
+          views: item.views || 0,
+          description: item.description,
+          url: item.file?.url || item.file?.path || item.link || '',
+          aiIndexed: item.aiIndex?.status === 'indexed',
+          chunksStored: item.aiIndex?.chunks || 0,
+          aiIndex: item.aiIndex,
+          extractedText: item.extractedText
+        }));
+        setContent(mappedContent);
+      }
+    } catch (error) {
+      console.error('Failed to fetch content:', error);
+      showNotice('Failed to load content library', 'error');
+    }
+  };
+
   useEffect(() => {
-    setContent([
-      {
-        id: 1,
-        title: 'Chapter 5: Quadratic Equations',
-        type: 'pdf',
-        class: '8th Grade A',
-        classId: 'class-8A',
-        subject: 'Mathematics',
-        chapter: 'Quadratic Equations',
-        topic: 'Introduction and solving methods',
-        size: '2.4 MB',
-        uploadDate: '2024-03-01',
-        downloads: 28,
-        views: 45,
-        description: 'Complete notes on quadratic equations with examples',
-      },
-      {
-        id: 2,
-        title: 'Geometry Basics Video',
-        type: 'video',
-        class: '8th Grade B',
-        classId: 'class-8B',
-        subject: 'Mathematics',
-        chapter: 'Geometry Basics',
-        topic: 'Shapes and properties',
-        size: '45.2 MB',
-        uploadDate: '2024-02-28',
-        downloads: 0,
-        views: 32,
-        description: 'Introduction to basic geometric concepts',
-        duration: '15:30',
-      },
-      {
-        id: 3,
-        title: 'Khan Academy - Algebra',
-        type: 'link',
-        class: 'Multiple Classes',
-        classId: '',
-        subject: 'Mathematics',
-        chapter: 'Algebra',
-        topic: 'Practice and review',
-        size: '-',
-        uploadDate: '2024-02-25',
-        downloads: 0,
-        views: 18,
-        description: 'External resource for additional practice',
-        url: 'https://khanacademy.org/algebra',
-      },
-      {
-        id: 4,
-        title: 'Trigonometry Notes',
-        type: 'pdf',
-        class: '9th Grade C',
-        classId: 'class-9C',
-        subject: 'Mathematics',
-        chapter: 'Trigonometry',
-        topic: 'Ratios and identities',
-        size: '3.1 MB',
-        uploadDate: '2024-02-20',
-        downloads: 32,
-        views: 48,
-        description: 'Comprehensive trigonometry reference',
-      },
-    ]);
+    fetchContent();
   }, []);
 
   useEffect(() => {
@@ -425,50 +396,14 @@ const Content = () => {
   };
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadPreview = async () => {
-      if (!previewItem?.url) {
-        setPreviewUrl('');
-        return;
-      }
-
+    if (previewItem?.url) {
       setPreviewLoading(true);
-      try {
-        const response = await fetch(previewItem.url);
-        if (!response.ok) {
-          throw new Error(`Unable to load file (${response.status})`);
-        }
-
-        const blob = await response.blob();
-        const objectUrl = URL.createObjectURL(blob);
-        if (!cancelled) {
-          setPreviewUrl(objectUrl);
-        } else {
-          URL.revokeObjectURL(objectUrl);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setPreviewUrl(previewItem.url);
-        }
-      } finally {
-        if (!cancelled) {
-          setPreviewLoading(false);
-        }
-      }
-    };
-
-    loadPreview();
-
-    return () => {
-      cancelled = true;
-      setPreviewUrl(current => {
-        if (current && current.startsWith('blob:')) {
-          URL.revokeObjectURL(current);
-        }
-        return '';
-      });
-    };
+      // Give the iframe a moment to load, or just rely on native iframe loading
+      const timer = setTimeout(() => {
+        setPreviewLoading(false);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
   }, [previewItem]);
 
   const filteredContent = content.filter(item => {
@@ -498,39 +433,58 @@ const Content = () => {
         </button>
       </div>
 
-      <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-semibold text-indigo-900">AI Knowledge Snapshot</h2>
-            <p className="text-sm text-indigo-700">These subjects and chapters are already indexed in AI.</p>
-          </div>
-          <div className="text-sm text-indigo-700">
-            {loadingKnowledge ? 'Loading...' : `${knowledgeItems.length} indexed entries`}
-          </div>
+      {/* AI Knowledge Summary Dashboard */}
+      <div className="bg-gradient-to-br from-indigo-900 to-purple-900 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-4 opacity-10">
+          <Database className="w-32 h-32" />
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {knowledgeSubjects.length > 0 ? knowledgeSubjects.map(subject => (
-            <span key={subject} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-indigo-700 shadow-sm">
-              {subject}
-            </span>
-          )) : (
-            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-indigo-700 shadow-sm">
-              No AI knowledge indexed yet
-            </span>
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
+                <Database className="w-6 h-6 text-indigo-100" />
+              </div>
+              <h2 className="text-2xl font-bold">AI Knowledge Base</h2>
+            </div>
+            <p className="text-indigo-200 mb-4 max-w-xl">
+              Your intelligent content repository. Documents uploaded here are parsed and indexed, empowering the AI to answer student doubts accurately.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {loadingKnowledge ? (
+                <span className="text-indigo-200 text-sm animate-pulse">Loading knowledge graph...</span>
+              ) : knowledgeSubjects.length > 0 ? (
+                knowledgeSubjects.map(subject => (
+                  <span key={subject} className="px-3 py-1 bg-white/10 hover:bg-white/20 transition-colors rounded-full text-xs font-medium border border-white/10 backdrop-blur-sm">
+                    {subject}
+                  </span>
+                ))
+              ) : (
+                <span className="text-indigo-200 text-sm">No knowledge indexed yet. Upload content to build your AI brain.</span>
+              )}
+            </div>
+          </div>
+          
+          {!loadingKnowledge && knowledgeItems.length > 0 && (
+            <div className="w-full md:w-80 bg-black/20 rounded-xl p-4 backdrop-blur-md border border-white/10">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-sm font-semibold text-indigo-100">Recent Indexing</h3>
+                <span className="text-xs bg-indigo-500/30 px-2 py-1 rounded text-indigo-100">{knowledgeItems.length} entries</span>
+              </div>
+              <div className="space-y-2 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
+                {knowledgeItems.slice(0, 5).map((item, index) => (
+                  <div key={`${item.subject}-${item.chapter}-${item.topic}-${index}`} className="flex justify-between items-center text-xs group">
+                    <span className="text-indigo-200 truncate pr-2 group-hover:text-white transition-colors">
+                      {item.subject} › {item.chapter}
+                    </span>
+                    <span className="text-emerald-400 font-mono bg-emerald-400/10 px-1.5 py-0.5 rounded flex-shrink-0">
+                      {item.chunks || 0} pts
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
-        {!loadingKnowledge && knowledgeItems.length > 0 && (
-          <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
-            {knowledgeItems.slice(0, 6).map((item, index) => (
-              <div key={`${item.subject}-${item.chapter}-${item.topic}-${index}`} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-xs text-indigo-900">
-                <span className="truncate">
-                  {item.subject} / {item.chapter}{item.topic ? ` / ${item.topic}` : ''}
-                </span>
-                <span className="ml-3 shrink-0 font-semibold">{item.chunks || 0} chunks</span>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
 
@@ -726,69 +680,138 @@ const Content = () => {
 
       {/* Upload Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <form onSubmit={handleSubmitUpload} className="bg-white rounded-lg p-6 w-full max-w-xl">
-            <h3 className="text-lg font-semibold mb-3">Upload Content</h3>
-            <div className="grid grid-cols-1 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  File (PDF, Video, or Document)
-                </label>
-                <input 
-                  type="file" 
-                  accept=".pdf,.doc,.docx,.ppt,.pptx,.mp4,.mp3,.wav,.jpg,.jpeg,.png,.gif"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      setNewItem(prev => ({
-                        ...prev, 
-                        file,
-                        title: prev.title || file.name.replace(/\.[^/.]+$/, '') // Auto-populate title from filename
-                      }));
-                    }
-                  }}
-                  className="block w-full text-sm text-gray-500 border border-gray-300 rounded px-3 py-2
-                    file:mr-4 file:py-2 file:px-4
-                    file:rounded file:border-0
-                    file:text-sm file:font-semibold
-                    file:bg-blue-50 file:text-blue-700
-                    hover:file:bg-blue-100"
-                />
-                {newItem.file && (
-                  <p className="text-xs text-gray-600 mt-1">
-                    ✅ Selected: {newItem.file.name} ({(newItem.file.size / 1024 / 1024).toFixed(2)} MB)
-                  </p>
-                )}
-              </div>
-              <input 
-                placeholder="Title (auto-filled if uploading a file)" 
-                value={newItem.title} 
-                onChange={e=>setNewItem(prev=>({...prev,title:e.target.value}))} 
-                className="border p-2 rounded" 
-              />
-              <select value={newItem.type} onChange={e=>setNewItem(prev=>({...prev,type:e.target.value}))} className="border p-2 rounded">
-                <option value="pdf">PDF / Document</option>
-                <option value="video">Video</option>
-                <option value="link">Link</option>
-              </select>
-              <input placeholder="Class (e.g. 8th Grade A)" value={newItem.class} onChange={e=>setNewItem(prev=>({...prev,class:e.target.value}))} className="border p-2 rounded" />
-              <input placeholder="Class ID (optional)" value={newItem.classId} onChange={e=>setNewItem(prev=>({...prev,classId:e.target.value}))} className="border p-2 rounded" />
-              <input placeholder="Subject (for AI)" value={newItem.subject} onChange={e=>setNewItem(prev=>({...prev,subject:e.target.value}))} className="border p-2 rounded" />
-              <input placeholder="Chapter (for AI)" value={newItem.chapter} onChange={e=>setNewItem(prev=>({...prev,chapter:e.target.value}))} className="border p-2 rounded" />
-              <input placeholder="Topic (for AI)" value={newItem.topic} onChange={e=>setNewItem(prev=>({...prev,topic:e.target.value}))} className="border p-2 rounded" />
-              <textarea placeholder="Description" value={newItem.description} onChange={e=>setNewItem(prev=>({...prev,description:e.target.value}))} className="border p-2 rounded" />
-              <p className="text-xs text-gray-600 bg-blue-50 p-2 rounded">
-                💡 Content will be uploaded and added to the AI Knowledge Base.
-              </p>
-            </div>
-
-            <div className="mt-4 flex justify-end space-x-2">
-              <button type="button" onClick={handleCloseUpload} className="px-4 py-2 rounded border">Cancel</button>
-              <button type="button" onClick={(e) => handleSubmitUpload(e, true)} className="px-4 py-2 rounded bg-purple-600 text-white font-medium hover:bg-purple-700">
-                Upload to Knowledge Base
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 flex justify-between items-center text-white">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <Upload className="w-5 h-5" />
+                Upload Course Content
+              </h3>
+              <button onClick={handleCloseUpload} className="text-white/80 hover:text-white transition-colors">
+                <XCircle className="w-6 h-6" />
               </button>
             </div>
-          </form>
+            
+            <div className="overflow-y-auto p-6 custom-scrollbar">
+              <form id="upload-form" onSubmit={(e) => handleSubmitUpload(e, true)} className="space-y-6">
+                
+                {/* File Upload Area */}
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-500 transition-colors bg-gray-50">
+                  <input 
+                    type="file" 
+                    id="file-upload"
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.mp4,.mp3,.wav,.jpg,.jpeg,.png,.gif"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setNewItem(prev => ({
+                          ...prev, 
+                          file,
+                          title: prev.title || file.name.replace(/\.[^/.]+$/, '')
+                        }));
+                      }
+                    }}
+                    className="hidden"
+                  />
+                  <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center gap-3">
+                    <div className="p-4 bg-blue-100 text-blue-600 rounded-full">
+                      <Upload className="w-8 h-8" />
+                    </div>
+                    <div>
+                      <span className="text-blue-600 font-semibold hover:underline">Click to upload</span> or drag and drop
+                      <p className="text-xs text-gray-500 mt-1">PDF, Video, or Document (Max 100MB)</p>
+                    </div>
+                  </label>
+                  {newItem.file && (
+                    <div className="mt-4 p-3 bg-white border border-green-200 rounded-lg flex items-center justify-between">
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <FileText className="w-5 h-5 text-green-500 flex-shrink-0" />
+                        <span className="text-sm font-medium text-gray-700 truncate">{newItem.file.name}</span>
+                      </div>
+                      <span className="text-xs text-gray-500 flex-shrink-0">{(newItem.file.size / 1024 / 1024).toFixed(2)} MB</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-sm font-semibold text-gray-700">Content Title</label>
+                    <input 
+                      placeholder="e.g. Intro to Algebra" 
+                      value={newItem.title} 
+                      onChange={e=>setNewItem(prev=>({...prev,title:e.target.value}))} 
+                      className="w-full border border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow" 
+                      required
+                    />
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <label className="text-sm font-semibold text-gray-700">Content Type</label>
+                    <select 
+                      value={newItem.type} 
+                      onChange={e=>setNewItem(prev=>({...prev,type:e.target.value}))} 
+                      className="w-full border border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                    >
+                      <option value="pdf">PDF / Document</option>
+                      <option value="video">Video</option>
+                      <option value="link">External Link</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-sm font-semibold text-gray-700">Target Class</label>
+                    <input 
+                      placeholder="e.g. 10th Grade Math" 
+                      value={newItem.class} 
+                      onChange={e=>setNewItem(prev=>({...prev,class:e.target.value}))} 
+                      className="w-full border border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Database className="w-4 h-4 text-indigo-600" />
+                    <h4 className="font-semibold text-indigo-900 text-sm">AI Knowledge Indexing Metadata</h4>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <input placeholder="Subject" value={newItem.subject} onChange={e=>setNewItem(prev=>({...prev,subject:e.target.value}))} className="w-full border border-indigo-200 px-3 py-2 rounded-md text-sm focus:ring-2 focus:ring-indigo-500" required />
+                    <input placeholder="Chapter" value={newItem.chapter} onChange={e=>setNewItem(prev=>({...prev,chapter:e.target.value}))} className="w-full border border-indigo-200 px-3 py-2 rounded-md text-sm focus:ring-2 focus:ring-indigo-500" required />
+                    <input placeholder="Topic (Optional)" value={newItem.topic} onChange={e=>setNewItem(prev=>({...prev,topic:e.target.value}))} className="w-full border border-indigo-200 px-3 py-2 rounded-md text-sm focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700">Description</label>
+                  <textarea 
+                    placeholder="Provide a brief description of the content..." 
+                    value={newItem.description} 
+                    onChange={e=>setNewItem(prev=>({...prev,description:e.target.value}))} 
+                    className="w-full border border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent h-24 resize-none" 
+                  />
+                </div>
+              </form>
+            </div>
+            
+            <div className="border-t border-gray-100 px-6 py-4 bg-gray-50 flex items-center justify-between rounded-b-2xl">
+              <p className="text-xs text-gray-500 flex items-center gap-1">
+                <CheckCircle className="w-3 h-3 text-emerald-500" /> Auto-syncs to AI Base
+              </p>
+              <div className="flex gap-3">
+                <button type="button" onClick={handleCloseUpload} className="px-5 py-2 rounded-lg font-medium text-gray-700 hover:bg-gray-200 transition-colors">
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  form="upload-form"
+                  className="px-6 py-2 rounded-lg font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transition-all shadow-md flex items-center gap-2"
+                >
+                  <Upload className="w-4 h-4" />
+                  Upload & Index
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
