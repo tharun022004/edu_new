@@ -237,6 +237,13 @@ const Dashboard = () => {
       color: 'bg-gradient-to-r from-emerald-500 to-emerald-600',
       hoverColor: 'hover:from-emerald-600 hover:to-emerald-700'
     },
+    {
+      name: 'AI Knowledge',
+      icon: Brain,
+      href: '/ai-knowledge',
+      color: 'bg-gradient-to-r from-indigo-500 to-violet-600',
+      hoverColor: 'hover:from-indigo-600 hover:to-violet-700'
+    },
     { 
       name: 'Resolve Doubts', 
       icon: MessageSquare, 

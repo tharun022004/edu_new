@@ -482,7 +482,9 @@ const Classes = () => {
                           </div>
                         ))}
                       </div>
-                      <span className="text-lg font-bold">+{classItem.students - 3}</span>
+                      {Math.max(0, classItem.students - classItem.recentStudents.length) > 0 && (
+                        <span className="text-lg font-bold">+{Math.max(0, classItem.students - classItem.recentStudents.length)}</span>
+                      )}
                     </div>
                   </div>
 

@@ -11,6 +11,10 @@ const contentSchema = new mongoose.Schema({
     type: String,
     maxlength: [1000, 'Description cannot be more than 1000 characters']
   },
+  extractedText: {
+    type: String,
+    default: ''
+  },
   type: {
     type: String,
     enum: ['video', 'pdf', 'quiz', 'link', 'image', 'audio', 'presentation', 'assignment', 'chapter', 'subtopic', 'document'],
@@ -67,6 +71,18 @@ const contentSchema = new mongoose.Schema({
     fileSize: String,
     resolution: String, // for images/videos
     format: String
+  },
+  aiIndex: {
+    status: {
+      type: String,
+      enum: ['not_requested', 'pending', 'indexed', 'failed'],
+      default: 'not_requested'
+    },
+    chunks: { type: Number, default: 0 },
+    textLength: { type: Number, default: 0 },
+    lastSyncedAt: Date,
+    error: String,
+    sourceType: String
   },
   tags: [String],
   status: {

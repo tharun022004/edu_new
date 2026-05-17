@@ -324,7 +324,7 @@ const ClassDetail = () => {
             <Route path="/assignments" element={<ClassAssignments classId={classId} />} />
             <Route path="/content" element={<ClassContent classId={classId} classData={currentClass} />} />
             <Route path="/doubts" element={<ClassDoubts classId={classId} />} />
-            <Route path="/ai-tools" element={<ClassAITools classId={classId} />} />
+            <Route path="/ai-tools" element={<ClassAITools classId={classId} classData={currentClass} />} />
             <Route path="/reports" element={<ClassReports classId={classId} />} />
           </Routes>
         </div>

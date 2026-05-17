@@ -15,6 +15,7 @@ import Progress from './components/Progress';
 import DoubtResolution from './components/DoubtResolution';
 import Notes from './components/Notes';
 import Quiz from './components/Quiz';
+import AIChat from './components/AIChat';
 import { MagnifyingGlassIcon, BellIcon } from '@heroicons/react/24/outline';
 
 function App() {
@@ -169,6 +170,7 @@ function App() {
             <Route path="/doubts" element={<DoubtResolution />} />
             <Route path="/notes" element={<Notes />} />
             <Route path="/quiz" element={<Quiz />} />
+            <Route path="/ai-chat" element={<AIChat />} />
           </Routes>
           </div>
         </div>

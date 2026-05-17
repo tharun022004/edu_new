@@ -17,6 +17,8 @@ const {
   updateContent,
   deleteContent,
   uploadFile,
+  syncContentToAIIndex,
+  removeContentFromAIIndex,
   getContentStats,
   addChapter,
   addSubtopic,
@@ -75,6 +77,8 @@ router.post('/chapters', addChapter);
 router.post('/subtopics', addSubtopic);
 router.get('/chapters/:classId', getChapters);
 router.get('/student', getPublishedContentForStudent);
+router.post('/:id/ai-sync', syncContentToAIIndex);
+router.delete('/:id/ai-sync', removeContentFromAIIndex);
 
 router.route('/')
   .get(getContent)

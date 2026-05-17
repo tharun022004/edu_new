@@ -38,6 +38,8 @@ const DoubtResolution = () => {
   const [replyText, setReplyText] = useState('');
   const [enrolledClasses, setEnrolledClasses] = useState([]);
   const [classesLoading, setClassesLoading] = useState(false);
+  const [aiResponse, setAiResponse] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
   const threadEndRef = useRef(null);
 
   // New doubt form state — classId replaces manual subject entry
@@ -133,6 +135,41 @@ const DoubtResolution = () => {
       showToast('Error submitting doubt', 'error');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleAskAI = async (e) => {
+    e.preventDefault();
+    if (!form.question.trim() || !form.classId) { showToast('Please enter a question and select a course', 'error'); return; }
+    
+    const selectedClass = enrolledClasses.find(c => c._id === form.classId);
+    const subject = selectedClass?.subject || selectedClass?.name || 'General';
+    const chapter = form.title || 'General';
+    
+    setAiLoading(true);
+    setAiResponse('');
+    try {
+      const res = await fetch('http://localhost:8000/ask-doubt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: form.question,
+          subject,
+          chapter,
+          student_id: studentEmail || 'student_123',
+          class_id: form.classId
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAiResponse(data.answer);
+      } else {
+        showToast(data.detail || 'Failed to get AI response', 'error');
+      }
+    } catch {
+      showToast('Error connecting to AI Tutor', 'error');
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -415,11 +452,35 @@ const DoubtResolution = () => {
               </div>
             </div>
 
-            <button type="submit" disabled={submitting || !form.title.trim() || !form.question.trim()}
-              className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-              {submitting ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <PaperAirplaneIcon className="w-5 h-5" />}
-              Submit Doubt
-            </button>
+            <div className="flex flex-col gap-3">
+              <button type="button" onClick={handleAskAI} disabled={aiLoading || !form.question.trim()}
+                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:opacity-90 disabled:opacity-50 transition-all shadow-md">
+                {aiLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <span className="text-xl">✨</span>}
+                Ask AI Tutor First
+              </button>
+              
+              <div className="relative flex items-center py-2">
+                <div className="flex-grow border-t border-gray-200"></div>
+                <span className="flex-shrink-0 mx-4 text-gray-400 text-sm">or</span>
+                <div className="flex-grow border-t border-gray-200"></div>
+              </div>
+
+              <button type="submit" disabled={submitting || !form.title.trim() || !form.question.trim()}
+                className="w-full flex items-center justify-center gap-2 bg-white text-indigo-600 border-2 border-indigo-600 py-3 rounded-xl font-semibold hover:bg-indigo-50 disabled:opacity-50 transition-colors">
+                {submitting ? <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" /> : <PaperAirplaneIcon className="w-5 h-5" />}
+                Send to Teacher
+              </button>
+            </div>
+            
+            {aiResponse && (
+              <div className="mt-6 bg-purple-50 border border-purple-200 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-xl">✨</span>
+                  <h3 className="font-bold text-purple-900">AI Tutor Response</h3>
+                </div>
+                <p className="text-purple-800 text-sm whitespace-pre-wrap leading-relaxed">{aiResponse}</p>
+              </div>
+            )}
           </form>
         </div>
       </div>

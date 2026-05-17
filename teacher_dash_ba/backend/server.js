@@ -41,7 +41,7 @@ app.use(compression());
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://your-frontend-domain.com'] 
-    : ['http://localhost:3000', 'http://localhost:5173','http://localhost:5174'],
+    : ['http://localhost:3000', 'http://localhost:5173','http://localhost:5174','http://localhost:5175'],
   credentials: true,
   optionsSuccessStatus: 200
 };
@@ -202,7 +202,7 @@ const io = new Server(httpServer, {
   cors: {
     origin: process.env.NODE_ENV === 'production' 
       ? ['https://your-frontend-domain.com'] 
-      : ['http://localhost:3000', 'http://localhost:5173','http://localhost:5174'],
+      : ['http://localhost:3000', 'http://localhost:5173','http://localhost:5174','http://localhost:5175'],
     credentials: true
   }
 });

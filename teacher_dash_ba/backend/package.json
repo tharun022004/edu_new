@@ -17,6 +17,7 @@
   "author": "Teacher Dashboard Team",
   "license": "MIT",
   "dependencies": {
+    "axios": "^1.16.1",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
@@ -30,6 +31,7 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.7",
+    "pdf-parse": "^1.1.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {

@@ -92,6 +92,8 @@ class ApiService {
       apiError.status = response.status;
       apiError.errors = error.errors;
       apiError.hint = error.hint;
+      apiError.data = error.data;
+      apiError.retryable = error.retryable;
       throw apiError;
     }
     return response.json();

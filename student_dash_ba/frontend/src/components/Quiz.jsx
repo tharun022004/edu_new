@@ -38,6 +38,19 @@ import {
 } from '@heroicons/react/24/solid';
 import toast from 'react-hot-toast';
 
+const AI_BASE_URL = import.meta.env.VITE_AI_API_URL || 'http://localhost:8000';
+
+const toText = (value) => {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'object') {
+    const nested = value.name ?? value.title ?? value.label ?? value.id ?? value.value;
+    return typeof nested === 'object' ? toText(nested) : (nested ? String(nested) : '');
+  }
+  return String(value);
+};
+
 const Quiz = () => {
   const navigate = useNavigate();
   const [mainTab, setMainTab] = useState('live'); // 'live' | 'practice'
@@ -66,6 +79,9 @@ const Quiz = () => {
   const [bookmarkedQuestions, setBookmarkedQuestions] = useState([]);
   const [availableQuizzes, setAvailableQuizzes] = useState([]);
   const [loadingQuizzes, setLoadingQuizzes] = useState(false);
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [aiKnowledge, setAiKnowledge] = useState([]);
+  const [loadingAIKnowledge, setLoadingAIKnowledge] = useState(false);
   const [quizHistory, setQuizHistory] = useState([
     {
       id: 1,
@@ -195,6 +211,28 @@ const Quiz = () => {
     return chaptersMap;
   }, [availableQuizzes]);
 
+  const aiSubjects = React.useMemo(() => {
+    return [...new Set(aiKnowledge.map(item => toText(item.subject)).filter(Boolean))].sort();
+  }, [aiKnowledge]);
+
+  const getAIChapters = (subject) => {
+    return [...new Set(
+      aiKnowledge
+        .filter(item => toText(item.subject).toLowerCase() === toText(subject).toLowerCase())
+        .map(item => toText(item.chapter))
+        .filter(Boolean)
+    )].sort();
+  };
+
+  const getAITopics = (subject, chapter) => {
+    return [...new Set(
+      aiKnowledge
+        .filter(item => toText(item.subject).toLowerCase() === toText(subject).toLowerCase() && toText(item.chapter).toLowerCase() === toText(chapter).toLowerCase())
+        .map(item => toText(item.topic))
+        .filter(topic => topic && topic !== 'General')
+    )].sort();
+  };
+
   const sampleQuiz = {
     questions: [
       {
@@ -268,6 +306,27 @@ const Quiz = () => {
     fetchQuizzes();
   }, []);
 
+  useEffect(() => {
+    const fetchAIKnowledge = async () => {
+      try {
+        setLoadingAIKnowledge(true);
+        const response = await fetch(`${AI_BASE_URL}/knowledge`);
+        const data = await response.json();
+        if (response.ok) {
+          setAiKnowledge(data.items || []);
+        } else {
+          console.error('AI knowledge API returned error:', data.detail);
+        }
+      } catch (err) {
+        console.error('Error fetching AI knowledge:', err);
+      } finally {
+        setLoadingAIKnowledge(false);
+      }
+    };
+
+    fetchAIKnowledge();
+  }, []);
+
   // Timer effect
   useEffect(() => {
     if (currentView === 'quiz' && timeLeft > 0 && !showResult) {
@@ -277,6 +336,68 @@ const Quiz = () => {
       handleNextQuestion();
     }
   }, [timeLeft, currentView, showResult]);
+
+  const handleGenerateAIQuiz = async (subject, chapter, topic = '') => {
+    setIsGeneratingAI(true);
+    try {
+      const response = await fetch(`${AI_BASE_URL}/generate-quiz`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject, chapter, topic: topic || undefined })
+      });
+      const data = await response.json();
+
+      if (response.ok && data.quiz && data.quiz.length > 0) {
+        const transformedQuiz = {
+          questions: data.quiz.map((q, index) => {
+            const optionsArr = Array.isArray(q.options) ? q.options.map(o => (typeof o === 'object' ? (o.text ?? String(o)) : String(o))) : [];
+            let correctIndex = 0;
+
+            // Case 1: answer provided as numeric index
+            if (typeof q.answer === 'number' && q.answer >= 0 && q.answer < optionsArr.length) {
+              correctIndex = q.answer;
+            }
+
+            // Case 2: answer provided as option text
+            if ((typeof q.answer === 'string' || typeof q.answer === 'object') && optionsArr.length) {
+              const ansText = typeof q.answer === 'string' ? q.answer : String(q.answer);
+              const txtIdx = optionsArr.indexOf(ansText);
+              if (txtIdx !== -1) correctIndex = txtIdx;
+            }
+
+            // Case 3: some sources include `correct` field
+            if (typeof q.correct === 'number' && q.correct >= 0 && q.correct < optionsArr.length) {
+              correctIndex = q.correct;
+            }
+
+            return {
+              id: index,
+              question: q.question,
+              options: optionsArr,
+              correct: correctIndex,
+              explanation: `Correct answer: ${q.answer}`
+            };
+          })
+        };
+        setQuizData(transformedQuiz);
+        setCurrentQuestion(0);
+        setScore(0);
+        setTimeLeft(30);
+        setSelectedAnswer(null);
+        setShowResult(false);
+        setSelectedSubject(subject);
+        setSelectedChapter(topic || chapter);
+        setCurrentView('quiz');
+        if (soundEnabled) toast.success('AI quiz generated!');
+      } else {
+        toast.error(data.detail || 'Failed to generate AI quiz.');
+      }
+    } catch (err) {
+      toast.error('Failed to connect to AI Service.');
+    } finally {
+      setIsGeneratingAI(false);
+    }
+  };
 
   const startQuiz = async (type, options = {}) => {
     setIsLoading(true);
@@ -305,13 +426,31 @@ const Quiz = () => {
         
         // Transform backend quiz data to match frontend structure
         const transformedQuiz = {
-          questions: selectedQuiz.questions?.map((q, index) => ({
-            id: q._id || index,
-            question: q.question,
-            options: q.options?.map(opt => opt.text) || [],
-            correct: q.options?.findIndex(opt => opt.isCorrect) || 0,
-            explanation: q.explanation || 'No explanation available'
-          })) || sampleQuiz.questions
+          questions: selectedQuiz.questions?.map((q, index) => {
+            const optionsArr = q.options?.map(opt => (typeof opt === 'object' ? (opt.text ?? String(opt)) : String(opt))) || [];
+            let correctIndex = 0;
+
+            // Prefer explicit correctAnswer string
+            if (q.correctAnswer && typeof q.correctAnswer === 'string') {
+              const idx = optionsArr.indexOf(q.correctAnswer);
+              if (idx !== -1) correctIndex = idx;
+            }
+
+            // Fall back to options[].isCorrect boolean
+            const isCorrectIdx = Array.isArray(q.options) ? q.options.findIndex(opt => opt && opt.isCorrect) : -1;
+            if (isCorrectIdx !== -1) correctIndex = isCorrectIdx;
+
+            // Ensure valid index
+            if (typeof correctIndex !== 'number' || correctIndex < 0 || correctIndex >= optionsArr.length) correctIndex = 0;
+
+            return {
+              id: q._id || index,
+              question: q.question,
+              options: optionsArr,
+              correct: correctIndex,
+              explanation: q.explanation || 'No explanation available'
+            };
+          }) || sampleQuiz.questions
         };
         
         setQuizData(transformedQuiz);
@@ -465,6 +604,94 @@ const Quiz = () => {
     });
   };
 
+  const AiSetupScreen = () => {
+    const [subject, setSubject] = useState('');
+    const [chapter, setChapter] = useState('');
+    const [topic, setTopic] = useState('');
+    const availableChapters = getAIChapters(subject);
+    const availableTopics = getAITopics(subject, chapter);
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center">
+        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">AI Quiz Generator</h2>
+          <div className="space-y-4">
+            {loadingAIKnowledge ? (
+              <div className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-5 text-sm text-gray-500">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                Loading AI knowledge...
+              </div>
+            ) : aiSubjects.length === 0 ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
+                No AI knowledge has been added yet. Ask your teacher to add chapters in AI Tools first.
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                  <select
+                    value={subject}
+                    onChange={e => {
+                      setSubject(e.target.value);
+                      setChapter('');
+                      setTopic('');
+                    }}
+                    className="w-full px-4 py-2 border rounded-xl bg-white"
+                  >
+                    <option value="">Select subject</option>
+                    {aiSubjects.map(item => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Chapter</label>
+                  <select
+                    value={chapter}
+                    onChange={e => {
+                      setChapter(e.target.value);
+                      setTopic('');
+                    }}
+                    disabled={!subject}
+                    className="w-full px-4 py-2 border rounded-xl bg-white disabled:bg-gray-100"
+                  >
+                    <option value="">Select chapter</option>
+                    {availableChapters.map(item => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Topic</label>
+                  <select
+                    value={topic}
+                    onChange={e => setTopic(e.target.value)}
+                    disabled={!chapter || availableTopics.length === 0}
+                    className="w-full px-4 py-2 border rounded-xl bg-white disabled:bg-gray-100"
+                  >
+                    <option value="">All topics in this chapter</option>
+                    {availableTopics.map(item => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+            <button
+              onClick={() => handleGenerateAIQuiz(subject, chapter, topic)}
+              disabled={isGeneratingAI || !subject || !chapter || aiSubjects.length === 0}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {isGeneratingAI ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <SparklesIcon className="w-5 h-5" />}
+              {isGeneratingAI ? 'Generating...' : 'Generate Quiz'}
+            </button>
+            <button onClick={() => setCurrentView('home')} className="w-full py-3 text-gray-600 font-medium hover:bg-gray-50 rounded-xl transition-colors">Cancel</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Quiz Home Screen
   const QuizHome = () => (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
@@ -529,9 +756,9 @@ const Quiz = () => {
         </div>
 
         {/* Quiz Options */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
           {/* Select by Topic */}
-          <div 
+          <div
             onClick={() => setCurrentView('topic-select')}
             className="group bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 cursor-pointer transform hover:scale-105 overflow-hidden"
           >
@@ -579,6 +806,24 @@ const Quiz = () => {
             <div className="p-6">
               <div className="flex items-center justify-between text-gray-600">
                 <span>Challenge accepted!</span>
+                <ChevronRightIcon className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </div>
+          </div>
+
+          {/* AI Quiz Generator */}
+          <div
+            onClick={() => setCurrentView('ai-setup')}
+            className="group bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 cursor-pointer transform hover:scale-105 overflow-hidden"
+          >
+            <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-8 text-white text-center">
+              <SparklesIcon className="h-16 w-16 mx-auto mb-4 group-hover:animate-pulse" />
+              <h3 className="text-2xl font-bold mb-2">AI Generator</h3>
+              <p className="text-indigo-100">Create instant quizzes</p>
+            </div>
+            <div className="p-6">
+              <div className="flex items-center justify-between text-gray-600">
+                <span>Magic creation</span>
                 <ChevronRightIcon className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
               </div>
             </div>
@@ -1403,6 +1648,7 @@ const Quiz = () => {
         (() => {
           if (showHistory) return <QuizHistoryScreen />;
           switch (currentView) {
+            case 'ai-setup': return <AiSetupScreen />;
             case 'topic-select': return <TopicSelection />;
             case 'random': return <RandomQuiz />;
             case 'multiplayer': return <MultiplayerScreen />;

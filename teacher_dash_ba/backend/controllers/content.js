@@ -3,6 +3,11 @@ const Class = require('../models/Class');
 const path = require('path');
 const fs = require('fs');
 const mongoose = require('mongoose');
+const pdfParse = require('pdf-parse');
+const axios = require('axios');
+
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+const MIN_AI_TEXT_LENGTH = 1;
 
 
 // Helper function to map class subject to course category
@@ -1038,6 +1043,22 @@ exports.createContent = async (req, res, next) => {
     }
 
     console.log('✅ Validated data, creating content...');
+    const requestedChapter = typeof req.body.chapter === 'string' ? req.body.chapter.trim() : '';
+    const requestedTopic = typeof req.body.topic === 'string' ? req.body.topic.trim() : '';
+    if (requestedChapter) {
+      req.body.chapter = {
+        id: `chapter_${requestedChapter.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+        name: requestedChapter,
+        description: req.body.chapterText || ''
+      };
+    }
+    if (requestedTopic) {
+      req.body.subtopic = {
+        id: `subtopic_${requestedTopic.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+        title: requestedTopic
+      };
+    }
+
     const content = await Content.create(req.body);
 
     // Update class stats
@@ -1047,6 +1068,38 @@ exports.createContent = async (req, res, next) => {
       classItem.stats = { totalContent: 1 };
     }
     await classItem.save();
+
+    if (wantsAiIndexing(req.body.addToAi)) {
+      const indexableText = buildIndexableText(req.body);
+      const aiResult = await indexTextForAI({
+        text: indexableText,
+        subject: content.subject,
+        chapter: content.chapter?.name || req.body.chapter || content.title,
+        topic: content.subtopic?.title || req.body.topic || 'General',
+        classId: content.class?.toString(),
+        teacherId: req.user.id,
+        sourceType: 'teacher-posted-content'
+      });
+
+      content.aiIndex = {
+        status: aiResult.success ? 'indexed' : 'failed',
+        chunks: aiResult.chunks || 0,
+        textLength: aiResult.textLength || indexableText.length,
+        lastSyncedAt: new Date(),
+        error: aiResult.error,
+        sourceType: 'teacher-posted-content'
+      };
+      await content.save();
+
+      if (!aiResult.success) {
+        return res.status(422).json({
+          success: false,
+          data: content,
+          retryable: true,
+          message: aiResult.error || 'Content was saved, but AI indexing failed. Please add more text or retry.'
+        });
+      }
+    }
 
     console.log('✅ Content created successfully:', content._id);
 
@@ -1210,15 +1263,200 @@ exports.uploadFile = async (req, res, next) => {
       url: `/uploads/content/${req.file.filename}`
     };
 
+    const subject = req.body.subject || 'General';
+    const chapter = req.body.chapter || 'General';
+    const topic = req.body.topic || 'General';
+    const classId = req.body.class_id || '';
+    const teacherId = req.user?.id || req.body.teacher_id || '';
+    const isPdf = req.file.mimetype === 'application/pdf' || req.file.originalname.toLowerCase().endsWith('.pdf');
+    const addToAi = req.body.addToAi === undefined ? isPdf : wantsAiIndexing(req.body.addToAi);
+
+    // Extract text from PDF and send it to the AI knowledge base in the same request.
+    let extractedText = null;
+    let aiIndexed = false;
+    let chunksStored = 0;
+    
+    if (isPdf) {
+      try {
+        console.log('📄 Extracting text from PDF:', req.file.originalname);
+        
+        // Read PDF file
+        const pdfBuffer = fs.readFileSync(req.file.path);
+        
+        // Extract text from PDF
+        const pdfData = await pdfParse(pdfBuffer);
+        extractedText = pdfData.text;
+        
+        console.log(`✅ Extracted ${extractedText.length} characters from PDF`);
+        fileData.extractedText = extractedText; // Store for later use
+        fileData.textExtracted = true;
+
+        const aiText = cleanText([
+          extractedText,
+          req.file.originalname,
+          subject,
+          chapter,
+          topic
+        ].filter(Boolean).join('\n\n'));
+
+        if (addToAi && aiText) {
+          try {
+            const aiResponse = await axios.post(`${AI_SERVICE_URL}/upload-content`, {
+              text: aiText,
+              subject,
+              chapter,
+              topic,
+              class_id: classId,
+              teacher_id: teacherId,
+              source_type: 'pdf-upload'
+            });
+
+            chunksStored = aiResponse.data?.chunks_stored || 0;
+            aiIndexed = chunksStored > 0;
+            fileData.aiIndexed = aiIndexed;
+            fileData.chunksStored = chunksStored;
+            fileData.aiTextLength = aiText.length;
+            console.log(`✅ Added PDF to AI knowledge base (${chunksStored} chunks)`);
+          } catch (aiError) {
+            console.error('❌ Error adding PDF to AI knowledge base:', aiError.response?.data || aiError.message);
+            fileData.aiIndexed = false;
+            fileData.aiError = aiError.response?.data?.detail || aiError.message;
+            fileData.aiTextLength = aiText.length;
+          }
+        }
+      } catch (pdfError) {
+        console.error('❌ Error extracting PDF text:', pdfError.message);
+        fileData.extractionError = pdfError.message;
+      }
+    }
+
+    if (!fileData.aiIndexed && extractedText && extractedText.trim() && !fileData.aiError) {
+      fileData.aiIndexed = aiIndexed;
+      fileData.chunksStored = chunksStored;
+    }
+
     res.status(200).json({
       success: true,
       data: fileData,
-      message: 'File uploaded successfully'
+      message: fileData.aiIndexed
+        ? 'File uploaded and added to AI knowledge base successfully'
+        : addToAi
+          ? 'File uploaded successfully, but AI indexing was skipped or only partially completed.'
+          : 'File uploaded successfully'
     });
   } catch (error) {
     res.status(500).json({
       success: false,
       message: 'Server error during file upload',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Sync an existing content item to AI
+// @route   POST /api/content/:id/ai-sync
+// @access  Private
+exports.syncContentToAIIndex = async (req, res, next) => {
+  try {
+    const content = await Content.findById(req.params.id);
+    if (!content) {
+      return res.status(404).json({ success: false, message: 'Content not found' });
+    }
+    if (content.teacher.toString() !== req.user.id) {
+      return res.status(401).json({ success: false, message: 'Not authorized to sync this content' });
+    }
+
+    const indexableText = buildIndexableText({
+      ...content.toObject(),
+      lessonText: req.body?.text,
+      chapterText: content.chapter?.description,
+      notes: content.metadata?.notes
+    });
+
+    const aiResult = await indexTextForAI({
+      text: indexableText,
+      subject: content.subject,
+      chapter: content.chapter?.name || req.body?.chapter || content.title,
+      topic: content.subtopic?.title || req.body?.topic || 'General',
+      classId: content.class?.toString(),
+      teacherId: req.user.id,
+      sourceType: req.body?.sourceType || 'teacher-resync'
+    });
+
+    content.aiIndex = {
+      status: aiResult.success ? 'indexed' : 'failed',
+      chunks: aiResult.chunks || 0,
+      textLength: aiResult.textLength || indexableText.length,
+      lastSyncedAt: new Date(),
+      error: aiResult.error,
+      sourceType: req.body?.sourceType || 'teacher-resync'
+    };
+    await content.save();
+
+    if (!aiResult.success) {
+      return res.status(422).json({
+        success: false,
+        data: content,
+        retryable: true,
+        message: aiResult.error || 'AI indexing failed. Please retry after adding lesson text.'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: content,
+      message: `Content indexed in AI (${aiResult.chunks} chunks)`
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error during AI sync',
+      error: error.message
+    });
+  }
+};
+
+// @desc    Remove an existing content item from AI
+// @route   DELETE /api/content/:id/ai-sync
+// @access  Private
+exports.removeContentFromAIIndex = async (req, res, next) => {
+  try {
+    const content = await Content.findById(req.params.id);
+    if (!content) {
+      return res.status(404).json({ success: false, message: 'Content not found' });
+    }
+    if (content.teacher.toString() !== req.user.id) {
+      return res.status(401).json({ success: false, message: 'Not authorized to remove this content from AI' });
+    }
+
+    const removed = await removeFromAI({
+      subject: content.subject,
+      chapter: content.chapter?.name || content.chapter || content.title,
+      topic: content.subtopic?.title || req.body?.topic,
+      classId: content.class?.toString(),
+      teacherId: req.user.id
+    });
+
+    content.aiIndex = {
+      status: 'not_requested',
+      chunks: 0,
+      textLength: 0,
+      lastSyncedAt: new Date(),
+      error: '',
+      sourceType: ''
+    };
+    await content.save();
+
+    res.status(200).json({
+      success: true,
+      data: content,
+      removedChunks: removed,
+      message: `Removed ${removed} AI chunks`
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error removing AI knowledge',
       error: error.message
     });
   }
@@ -1979,4 +2217,103 @@ exports.getChapters = async (req, res, next) => {
       error: error.message
     });
   }
+};
+
+const wantsAiIndexing = (value) => {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'boolean') return value;
+  return ['true', '1', 'yes', 'on'].includes(String(value).toLowerCase());
+};
+
+const cleanText = (value) => (value || '').toString().replace(/\s+/g, ' ').trim();
+
+const buildIndexableText = (contentData = {}) => {
+  const parts = [
+    contentData.extractedText,
+    contentData.lessonText,
+    contentData.notes,
+    contentData.chapterText,
+    contentData.description,
+    contentData.title
+  ].map(cleanText).filter(Boolean);
+
+  return parts.join('\n\n').trim();
+};
+
+const indexTextForAI = async ({
+  text,
+  subject,
+  chapter,
+  topic,
+  classId,
+  teacherId,
+  sourceType
+}) => {
+  const fullText = cleanText(text);
+  if (fullText.length < MIN_AI_TEXT_LENGTH) {
+    const reason = 'No text available to index.';
+    console.warn('AI indexing skipped:', reason);
+    return {
+      success: false,
+      status: 'failed',
+      chunks: 0,
+      textLength: fullText.length,
+      error: reason
+    };
+  }
+
+  try {
+    const aiResponse = await axios.post(`${AI_SERVICE_URL}/upload-content`, {
+      text: fullText,
+      subject: subject || 'General',
+      chapter: chapter || 'General',
+      topic: topic || 'General',
+      class_id: classId || '',
+      teacher_id: teacherId || '',
+      source_type: sourceType || 'teacher-content'
+    }, { timeout: 60000 });
+
+    const chunks = aiResponse.data?.chunks_stored || 0;
+    if (chunks <= 0) {
+      const reason = 'AI service responded but no chunks were stored.';
+      console.warn(reason, aiResponse.data);
+      return {
+        success: false,
+        status: 'failed',
+        chunks: 0,
+        textLength: fullText.length,
+        error: reason
+      };
+    }
+
+    return {
+      success: true,
+      status: 'indexed',
+      chunks,
+      textLength: aiResponse.data?.text_length || fullText.length,
+      metadata: aiResponse.data?.metadata || {}
+    };
+  } catch (error) {
+    const reason = error.response?.data?.detail || error.message || 'AI indexing failed';
+    console.error('AI indexing failed:', reason);
+    return {
+      success: false,
+      status: 'failed',
+      chunks: 0,
+      textLength: fullText.length,
+      error: reason
+    };
+  }
+};
+
+const removeFromAI = async ({ subject, chapter, topic, classId, teacherId }) => {
+  const aiResponse = await axios.post(`${AI_SERVICE_URL}/remove-content`, {
+    subject: subject || 'General',
+    chapter: chapter || 'General',
+    topic: topic || undefined,
+    class_id: classId || undefined,
+    teacher_id: teacherId || undefined
+  }, { timeout: 30000 });
+
+  return aiResponse.data?.removed_chunks || 0;
 };

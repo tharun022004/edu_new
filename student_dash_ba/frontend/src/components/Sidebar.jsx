@@ -10,6 +10,7 @@ import {
   FolderIcon,
   XMarkIcon,
   AcademicCapIcon,
+  ChatBubbleLeftEllipsisIcon,
 } from '@heroicons/react/24/outline';
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -39,6 +40,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { icon: ChartBarIcon, label: 'Progress', path: '/progress' },
     { icon: FolderIcon, label: 'Notes', path: '/notes' },
     { icon: AcademicCapIcon, label: 'Quiz', path: '/quiz' },
+    { icon: ChatBubbleLeftEllipsisIcon, label: 'AI Companion', path: '/ai-chat' },
   ];
 
   return (

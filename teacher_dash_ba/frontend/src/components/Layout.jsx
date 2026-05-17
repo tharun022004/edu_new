@@ -26,6 +26,7 @@ const Layout = ({ children, user, onLogout }) => {
     { name: 'Attendance', href: '/attendance', icon: ClipboardCheck },
     { name: 'Assignments', href: '/assignments', icon: FileText },
     { name: 'Quizzes', href: '/quiz', icon: Brain },
+    { name: 'AI Knowledge', href: '/ai-knowledge', icon: Brain },
     { name: 'Doubt Resolution', href: '/doubts', icon: HelpCircle },
     { name: 'Notes', href: '/notes', icon: FileText },
     { name: 'Settings', href: '/settings', icon: Settings },

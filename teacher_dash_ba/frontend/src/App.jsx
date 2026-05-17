@@ -8,6 +8,7 @@ import Classes from './pages/Classes';
 import ClassDetail from './pages/ClassDetail';
 import Assignments from './pages/Assignments';
 import ClassContent from './components/ClassContent';
+import ClassAITools from './components/ClassAITools';
 import Doubts from './pages/Doubts';
 import Settings from './pages/Settings';
 import TeacherQuiz from './pages/Quiz';
@@ -101,6 +102,7 @@ function App() {
           <Route path="/assignments" element={<Assignments />} />
           <Route path="/notes" element={<TeacherNotes />} />
           <Route path="/content" element={<ClassContent />} />
+          <Route path="/ai-knowledge" element={<ClassAITools />} />
           <Route path="/doubts" element={<Doubts />} />
           <Route path="/attendance" element={<Attendance />} />
           <Route path="/quiz" element={<TeacherQuiz />} />
