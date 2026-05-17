@@ -34,19 +34,34 @@ def _clean_value(value, fallback=""):
     return value if value else fallback
 
 def build_metadata_filter(subject: str, chapter: str, topic: str = None, class_id: str = None, teacher_id: str = None):
-    metadata_filter = {
-        "subject": _clean_value(subject),
-        "chapter": _clean_value(chapter)
-    }
+    """
+    Build a metadata filter for FAISS similarity search.
+    IMPORTANT: Only include non-empty values to ensure proper matching.
+    Empty values are problematic with FAISS filters and cause search failures.
+    """
+    metadata_filter = {}
+    
+    subject = _clean_value(subject)
+    if subject:
+        metadata_filter["subject"] = subject
+    
+    chapter = _clean_value(chapter)
+    if chapter:
+        metadata_filter["chapter"] = chapter
+    
     topic = _clean_value(topic)
     if topic:
         metadata_filter["topic"] = topic
+    
     class_id = _clean_value(class_id)
     if class_id:
         metadata_filter["class_id"] = class_id
+    
     teacher_id = _clean_value(teacher_id)
     if teacher_id:
         metadata_filter["teacher_id"] = teacher_id
+    
+    # If no valid filters, return empty dict (will search all documents)
     return metadata_filter
 
 def _new_splitter():
@@ -99,13 +114,25 @@ def index_content(
     metadatas = [base_metadata.copy() for _ in chunks]
 
     try:
+        print(f"\n📚 Indexing {len(chunks)} chunks")
+        print(f"   Subject: {base_metadata['subject']}")
+        print(f"   Chapter: {base_metadata['chapter']}")
+        print(f"   Topic: {base_metadata['topic']}")
+        print(f"   Class ID: {base_metadata['class_id']}")
+        print(f"   Teacher ID: {base_metadata['teacher_id']}")
+        
         if os.path.exists(DB_PATH):
+            print(f"   Loading existing FAISS index...")
             vector_db = FAISS.load_local(DB_PATH, get_embeddings(), allow_dangerous_deserialization=True)
             vector_db.add_texts(texts=chunks, metadatas=metadatas)
+            print(f"   ✅ Added to existing index")
         else:
+            print(f"   Creating new FAISS index...")
             vector_db = FAISS.from_texts(texts=chunks, embedding=get_embeddings(), metadatas=metadatas)
+            print(f"   ✅ Created new index")
 
         vector_db.save_local(DB_PATH)
+        print(f"   💾 Index saved to {DB_PATH}")
 
         verification = list_knowledge()
         matching_chunks = sum(
@@ -118,7 +145,11 @@ def index_content(
             and item.get("teacher_id", "") == base_metadata["teacher_id"]
         )
 
+        print(f"   🔍 Verification: {matching_chunks} chunks found for this exact metadata")
+        print(f"   📊 Total chunks in DB: {verification.get('total_chunks', 0)}\n")
+
         if matching_chunks <= 0:
+            print(f"   ⚠️ WARNING: Chunks were saved but verification didn't find them!")
             return {
                 "status": "failed",
                 "chunks_stored": 0,
@@ -126,7 +157,6 @@ def index_content(
                 "reason": "FAISS save completed but verification did not find the indexed chunks."
             }
 
-        print(f"Stored {len(chunks)} chunks for {subject} - {chapter} - {base_metadata['topic']}")
         return {
             "status": "success",
             "chunks_stored": len(chunks),
@@ -134,7 +164,7 @@ def index_content(
             "metadata": base_metadata
         }
     except Exception as e:
-        print(f"Error storing content: {e}")
+        print(f"❌ Error storing content: {e}\n")
         return {
             "status": "failed",
             "chunks_stored": 0,
@@ -171,57 +201,67 @@ def list_knowledge():
             "subjects": []
         }
 
-    with open(pkl_path, "rb") as file:
-        docstore, _ = pickle.load(file)
+    try:
+        with open(pkl_path, "rb") as file:
+            docstore, _ = pickle.load(file)
 
-    docs = getattr(docstore, "_dict", {}).values()
-    grouped = {}
+        docs = getattr(docstore, "_dict", {}).values()
+        grouped = {}
 
-    for doc in docs:
-        metadata = getattr(doc, "metadata", {}) or {}
-        subject = _clean_value(metadata.get("subject"), "General")
-        chapter = _clean_value(metadata.get("chapter"), "General")
-        topic = _clean_value(metadata.get("topic"), "General")
-        class_id = _clean_value(metadata.get("class_id"))
-        teacher_id = _clean_value(metadata.get("teacher_id"))
-        source_type = _clean_value(metadata.get("source_type"), "unknown")
-        created_at = _clean_value(metadata.get("created_at"))
-        key = (subject, chapter, topic, class_id, teacher_id)
+        for doc in docs:
+            metadata = getattr(doc, "metadata", {}) or {}
+            subject = _clean_value(metadata.get("subject"), "General")
+            chapter = _clean_value(metadata.get("chapter"), "General")
+            topic = _clean_value(metadata.get("topic"), "General")
+            class_id = _clean_value(metadata.get("class_id"))
+            teacher_id = _clean_value(metadata.get("teacher_id"))
+            source_type = _clean_value(metadata.get("source_type"), "unknown")
+            created_at = _clean_value(metadata.get("created_at"))
+            key = (subject, chapter, topic, class_id, teacher_id)
 
-        if key not in grouped:
-            grouped[key] = {
-                "subject": subject,
-                "chapter": chapter,
-                "topic": topic,
-                "class_id": class_id,
-                "teacher_id": teacher_id,
-                "source_type": source_type,
-                "text_length": int(metadata.get("text_length") or 0),
-                "chunks": 0,
-                "last_added": created_at
-            }
+            if key not in grouped:
+                grouped[key] = {
+                    "subject": subject,
+                    "chapter": chapter,
+                    "topic": topic,
+                    "class_id": class_id,
+                    "teacher_id": teacher_id,
+                    "source_type": source_type,
+                    "text_length": int(metadata.get("text_length") or 0),
+                    "chunks": 0,
+                    "last_added": created_at
+                }
 
-        grouped[key]["chunks"] += 1
-        grouped[key]["text_length"] = max(grouped[key].get("text_length", 0), int(metadata.get("text_length") or 0))
-        if created_at and created_at > (grouped[key].get("last_added") or ""):
-            grouped[key]["last_added"] = created_at
+            grouped[key]["chunks"] += 1
+            grouped[key]["text_length"] = max(grouped[key].get("text_length", 0), int(metadata.get("text_length") or 0))
+            if created_at and created_at > (grouped[key].get("last_added") or ""):
+                grouped[key]["last_added"] = created_at
 
-    items = sorted(
-        grouped.values(),
-        key=lambda item: (
-            item["subject"].lower(),
-            item["chapter"].lower(),
-            item["topic"].lower()
+        items = sorted(
+            grouped.values(),
+            key=lambda item: (
+                item["subject"].lower(),
+                item["chapter"].lower(),
+                item["topic"].lower()
+            )
         )
-    )
-    subjects = sorted({item["subject"] for item in items})
+        subjects = sorted({item["subject"] for item in items})
 
-    return {
-        "status": "success",
-        "total_chunks": sum(item["chunks"] for item in items),
-        "items": items,
-        "subjects": subjects
-    }
+        return {
+            "status": "success",
+            "total_chunks": sum(item["chunks"] for item in items),
+            "items": items,
+            "subjects": subjects
+        }
+    except Exception as e:
+        print(f"❌ Error in list_knowledge: {e}")
+        return {
+            "status": "error",
+            "total_chunks": 0,
+            "items": [],
+            "subjects": [],
+            "error": str(e)
+        }
 
 
 def remove_content(subject: str, chapter: str, topic: str = None, class_id: str = None, teacher_id: str = None):

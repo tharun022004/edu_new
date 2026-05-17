@@ -1282,12 +1282,20 @@ exports.uploadFile = async (req, res, next) => {
         
         // Read PDF file
         const pdfBuffer = fs.readFileSync(req.file.path);
+        console.log(`📦 PDF file size: ${pdfBuffer.length} bytes`);
         
         // Extract text from PDF
         const pdfData = await pdfParse(pdfBuffer);
         extractedText = pdfData.text;
         
         console.log(`✅ Extracted ${extractedText.length} characters from PDF`);
+        
+        if (extractedText.length === 0) {
+          console.warn('⚠️ WARNING: PDF extraction returned empty text! File may be corrupted or image-based.');
+        }
+        
+        console.log(`📝 First 200 chars of extracted text:\n${extractedText.substring(0, 200)}`);
+        
         fileData.extractedText = extractedText; // Store for later use
         fileData.textExtracted = true;
 
@@ -1299,8 +1307,12 @@ exports.uploadFile = async (req, res, next) => {
           topic
         ].filter(Boolean).join('\n\n'));
 
+        console.log(`🤖 AI Text prepared - Length: ${aiText.length} characters`);
+        console.log(`🤖 First 300 chars to send to AI:\n${aiText.substring(0, 300)}`);
+
         if (addToAi && aiText) {
           try {
+            console.log(`📤 Sending to AI service at ${AI_SERVICE_URL}/upload-content`);
             const aiResponse = await axios.post(`${AI_SERVICE_URL}/upload-content`, {
               text: aiText,
               subject,

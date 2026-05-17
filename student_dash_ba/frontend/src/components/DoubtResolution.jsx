@@ -145,6 +145,7 @@ const DoubtResolution = () => {
     const selectedClass = enrolledClasses.find(c => c._id === form.classId);
     const subject = selectedClass?.subject || selectedClass?.name || 'General';
     const chapter = form.title || 'General';
+    const topic = form.category || 'General';  // Use category as topic for better filtering
     
     setAiLoading(true);
     setAiResponse('');
@@ -156,6 +157,7 @@ const DoubtResolution = () => {
           question: form.question,
           subject,
           chapter,
+          topic,  // Added topic parameter
           student_id: studentEmail || 'student_123',
           class_id: form.classId
         })

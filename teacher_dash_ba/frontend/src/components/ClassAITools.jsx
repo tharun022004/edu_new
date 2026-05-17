@@ -236,10 +236,17 @@ const ClassAITools = ({ classId, classData }) => {
     if (!item) return showMessage('Selected content not found', 'error');
     setSyncing(true);
     try {
+      // Prefer extractedText when available; fall back to title/description
+      const textPayload = [
+        item.extractedText,
+        toText(item.description) || toText(item.summary) || '',
+        toText(item.title) || toText(item.name)
+      ].filter(Boolean).join('\n\n');
+
       const resp = await fetch(`${AI_BASE_URL}/upload-content`, {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
-          text: `${toText(item.title) || toText(item.name)}. ${toText(item.description) || toText(item.summary) || ''}`,
+          text: textPayload,
           subject: toText(item.subject) || form.subject || subject,
           chapter: toText(item.chapter) || form.chapter || '',
           topic: toText(item.topic) || form.topic || 'General',

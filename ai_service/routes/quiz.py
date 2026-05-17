@@ -27,7 +27,7 @@ async def create_quiz(request: QuizRequest):
                 detail="Knowledge base is empty. Upload content first."
             )
         
-        print(f"[QUIZ] {request.subject} - {request.chapter}")
+        print(f"\n[QUIZ] Generating for: {request.subject} - {request.chapter}")
 
         # 🔹 2. Load FAISS DB
         vector_db = FAISS.load_local(
@@ -36,38 +36,85 @@ async def create_quiz(request: QuizRequest):
             allow_dangerous_deserialization=True
         )
         
-        # 🔹 3. Fetch relevant content
+        # 🔹 3. Fetch relevant content with multiple search strategies
         search_filters = []
+        
+        # Strategy 1: Most specific (class+topic+teacher)
         if request.class_id:
-            search_filters.append(build_metadata_filter(
+            search_filters.append(("Class+Topic+Teacher", build_metadata_filter(
                 request.subject,
                 request.chapter,
                 request.topic,
                 request.class_id,
                 request.teacher_id
-            ))
+            )))
+            
+            # Strategy 2: Class+Topic (no teacher)
             if request.topic:
-                search_filters.append(build_metadata_filter(
+                search_filters.append(("Class+Topic", build_metadata_filter(
                     request.subject,
                     request.chapter,
-                    None,
+                    request.topic,
                     request.class_id,
-                    request.teacher_id
-                ))
-        search_filters.append(build_metadata_filter(request.subject, request.chapter, request.topic))
-
-        if request.topic:
-            search_filters.append(build_metadata_filter(request.subject, request.chapter))
+                    None
+                )))
+            
+            # Strategy 3: Class only
+            search_filters.append(("Class Only", build_metadata_filter(
+                request.subject,
+                request.chapter,
+                None,
+                request.class_id,
+                None
+            )))
+        
+        # Strategy 4: Subject+Chapter+Topic
+        search_filters.append(("Subject+Chapter+Topic", build_metadata_filter(
+            request.subject,
+            request.chapter,
+            request.topic
+        )))
+        
+        # Strategy 5: Subject+Chapter (broadest)
+        search_filters.append(("Subject+Chapter", build_metadata_filter(
+            request.subject,
+            request.chapter
+        )))
 
         search_results = []
-        for search_filter in search_filters:
-            search_results = vector_db.similarity_search(
-                request.topic or request.chapter,
-                k=12,
-                filter=search_filter
-            )
-            if search_results:
-                break
+        query_text = request.topic or request.chapter or request.subject
+        
+        for strategy_name, search_filter in search_filters:
+            print(f"   📍 Attempt: {strategy_name} with filter: {search_filter}")
+            try:
+                search_results = vector_db.similarity_search(
+                    query_text,
+                    k=12,
+                    filter=search_filter
+                )
+                if search_results:
+                    print(f"   ✅ Found {len(search_results)} chunks using {strategy_name}")
+                    break
+                else:
+                    print(f"   ❌ No results with {strategy_name}")
+            except Exception as e:
+                print(f"   ⚠️ Error with {strategy_name}: {str(e)}")
+                continue
+        
+        # Last resort: No filter
+        if not search_results:
+            print(f"   📍 Attempt: No Filter (Last Resort)")
+            try:
+                search_results = vector_db.similarity_search(
+                    query_text,
+                    k=12
+                )
+                if search_results:
+                    print(f"   ✅ Found {len(search_results)} chunks with no filter")
+                else:
+                    print(f"   ❌ No results even with unfiltered search")
+            except Exception as e:
+                print(f"   ⚠️ Error with unfiltered search: {str(e)}")
         
         # 🔹 4. Handle no content
         if not search_results:
